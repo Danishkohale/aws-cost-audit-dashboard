@@ -16,7 +16,11 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 RUN npm ci
-COPY . .
+# Copy source and test files (test dir is in .dockerignore for production)
+COPY src ./src
+COPY test ./test
+COPY vitest.config.ts ./
+COPY tsconfig.json ./
 RUN npm test
 
 # Production runner
