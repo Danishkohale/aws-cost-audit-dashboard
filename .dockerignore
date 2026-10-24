@@ -7,10 +7,6 @@ data
 .gitignore
 README.md
 *.test.ts
-vitest.config.ts
-tsconfig.json
-eslint.config.js
-prettier.config.js
 wrangler.jsonc
 worker-configuration.d.ts
 migrations
