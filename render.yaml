@@ -1,13 +1,12 @@
 services:
   - type: web
-    name: aws-cost-audit-dashboard
-    env: docker
-    dockerfilePath: packages/backend/Dockerfile
+    name: aws-cost-audit-backend
+    runtime: docker
     plan: free
+    region: oregon
     healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
-      - key: DB_DIR
-        value: /data
       - key: NODE_ENV
         value: production
       - key: TURSO_DATABASE_URL
