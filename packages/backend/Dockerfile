@@ -7,13 +7,13 @@ RUN apk add --no-cache python3 make g++
 
 # Production dependencies only (no better-sqlite3 - uses bun:sqlite)
 FROM base AS deps
-COPY package.json bun.lockb* ./
+COPY packages/backend/package.json packages/backend/bun.lockb* ./
 RUN bun install --frozen-lockfile --production
 
 # Frontend assets stage
 FROM base AS frontend
 WORKDIR /app
-COPY ../frontend/public ./public
+COPY packages/frontend/public ./public
 
 # Production runner
 FROM base AS runner
@@ -24,7 +24,7 @@ ENV DB_DIR=/data
 COPY --from=deps /app/node_modules ./node_modules
 
 # Copy application code
-COPY src ./src
+COPY packages/backend/src ./src
 
 # Copy frontend assets
 COPY --from=frontend /app/public ./public
