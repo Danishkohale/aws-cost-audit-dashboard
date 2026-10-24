@@ -2,32 +2,34 @@
 FROM oven/bun:1.4-alpine AS base
 WORKDIR /app
 
-# Install Python for native modules (only needed for better-sqlite3 in tests)
+# Install Python for native modules (if needed)
 RUN apk add --no-cache python3 make g++
 
-# Install ALL dependencies (including dev deps for tests)
+# Production dependencies only (no better-sqlite3 - uses bun:sqlite)
 FROM base AS deps
 COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --production
 
-# Build stage - run tests
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
+# Test stage - use Node.js image which has better-sqlite3 prebuilt for Node 20+
+FROM node:20-alpine AS test
+WORKDIR /app
+RUN apk add --no-cache python3 make g++
+COPY package.json package-lock.json* ./
+RUN npm ci
 COPY . .
-RUN bun run test
+RUN npm test
 
-# Production stage - only production deps, no better-sqlite3
+# Production runner
 FROM base AS runner
 ENV NODE_ENV=production
 ENV DB_DIR=/data
 
-# Install only production dependencies (no better-sqlite3 needed - using bun:sqlite)
-COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile --production
+# Copy production dependencies
+COPY --from=deps /app/node_modules ./node_modules
 
 # Copy application code
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/public ./public
+COPY --from=test /app/src ./src
+COPY --from=test /app/public ./public
 
 # Create data directory
 RUN mkdir -p /data
