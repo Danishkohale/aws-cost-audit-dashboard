@@ -10,18 +10,10 @@ FROM base AS deps
 COPY package.json bun.lockb* ./
 RUN bun install --frozen-lockfile --production
 
-# Test stage - use Bun directly (simpler, avoids pnpm workspace complexity in Docker)
-# Tests run locally in CI; we skip them in Docker build for faster deploys
-# FROM node:20-alpine AS test
-# WORKDIR /app
-# RUN apk add --no-cache python3 make g++
-# COPY package.json package-lock.json* ./
-# RUN npm ci
-# COPY src ./src
-# COPY test ./test
-# COPY vitest.config.ts ./
-# COPY tsconfig.json ./
-# RUN npm test
+# Frontend assets stage
+FROM base AS frontend
+WORKDIR /app
+COPY ../frontend/public ./public
 
 # Production runner
 FROM base AS runner
@@ -33,7 +25,9 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy application code
 COPY src ./src
-COPY public ./public
+
+# Copy frontend assets
+COPY --from=frontend /app/public ./public
 
 # Create data directory
 RUN mkdir -p /data
