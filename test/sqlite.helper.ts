@@ -1,50 +1,51 @@
 /**
- * Test SQLite database — in-memory for Vitest (Node.js).
+ * Test database — uses libSQL in-memory client wrapped as fake D1.
  */
-import Database from "better-sqlite3";
+import { createClient } from "@libsql/client";
 import type { D1Database } from "../src/db/jobs";
+import { setTestDb } from "../src/db/libsql";
 
-let testDb: Database.Database | null = null;
+let testDb: ReturnType<typeof createClient> | null = null;
 
 export function createTestDb(): D1Database {
 	if (!testDb) {
-		testDb = new Database(":memory:");
-		testDb.pragma("journal_mode = WAL");
-		testDb.pragma("foreign_keys = ON");
-		testDb.exec(`
-		CREATE TABLE jobs (
-		  id          TEXT PRIMARY KEY,
-		  status      TEXT NOT NULL,
-		  progress    INTEGER NOT NULL DEFAULT 0,
-		  logs        TEXT NOT NULL DEFAULT '[]',
-		  summary     TEXT,
-		  cost        TEXT,
-		  cost_note   TEXT,
-		  error       TEXT,
-		  region      TEXT,
-		  days        INTEGER,
-		  step        TEXT,
-		  started_at  TEXT,
-		  finished_at TEXT,
-		  created_at  TEXT NOT NULL
-		);
-		CREATE INDEX jobs_created_at ON jobs(created_at);
-
-		CREATE TABLE findings (
-		  job_id         TEXT NOT NULL,
-		  seq            INTEGER NOT NULL,
-		  service        TEXT NOT NULL,
-		  resource       TEXT NOT NULL,
-		  category       TEXT NOT NULL,
-		  detail         TEXT NOT NULL,
-		  saving         REAL NOT NULL DEFAULT 0,
-		  recommendation TEXT NOT NULL,
-		  meta           TEXT,
-		  PRIMARY KEY (job_id, seq),
-		  FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-		);
-		CREATE INDEX findings_job ON findings(job_id);
-		`);
+		testDb = createClient({ url: ":memory:" });
+		// Also set it for the routes to use
+		setTestDb(testDb);
+		// Initialize schema
+		testDb.batch([
+			`CREATE TABLE jobs (
+			  id          TEXT PRIMARY KEY,
+			  status      TEXT NOT NULL,
+			  progress    INTEGER NOT NULL DEFAULT 0,
+			  logs        TEXT NOT NULL DEFAULT '[]',
+			  summary     TEXT,
+			  cost        TEXT,
+			  cost_note   TEXT,
+			  error       TEXT,
+			  region      TEXT,
+			  days        INTEGER,
+			  step        TEXT,
+			  started_at  TEXT,
+			  finished_at TEXT,
+			  created_at  TEXT NOT NULL
+			);`,
+			`CREATE INDEX jobs_created_at ON jobs(created_at);`,
+			`CREATE TABLE findings (
+			  job_id         TEXT NOT NULL,
+			  seq            INTEGER NOT NULL,
+			  service        TEXT NOT NULL,
+			  resource       TEXT NOT NULL,
+			  category       TEXT NOT NULL,
+			  detail         TEXT NOT NULL,
+			  saving         REAL NOT NULL DEFAULT 0,
+			  recommendation TEXT NOT NULL,
+			  meta           TEXT,
+			  PRIMARY KEY (job_id, seq),
+			  FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+			);`,
+			`CREATE INDEX findings_job ON findings(job_id);`,
+		]);
 	}
 
 	class FakeStatement {
@@ -62,18 +63,18 @@ export function createTestDb(): D1Database {
 		}
 
 		async run(): Promise<{ success: boolean; results: unknown[]; meta: object }> {
-			testDb!.prepare(this.sql).run(...this.params());
+			await testDb!.execute({ sql: this.sql, args: this.params() });
 			return { success: true, results: [], meta: {} };
 		}
 
 		async first<T = unknown>(): Promise<T | null> {
-			const row = testDb!.prepare(this.sql).get(...this.params());
-			return (row as T | undefined) ?? null;
+			const result = await testDb!.execute({ sql: this.sql, args: this.params() });
+			return (result.rows[0] as T | undefined) ?? null;
 		}
 
 		async all<T = unknown>(): Promise<{ success: boolean; results: T[]; meta: object }> {
-			const rows = testDb!.prepare(this.sql).all(...this.params()) as T[];
-			return { success: true, results: rows, meta: {} };
+			const result = await testDb!.execute({ sql: this.sql, args: this.params() });
+			return { success: true, results: result.rows as T[], meta: {} };
 		}
 	}
 
@@ -87,7 +88,7 @@ export function createTestDb(): D1Database {
 		}
 
 		async exec(sql: string): Promise<{ count: number; duration: number }> {
-			testDb!.exec(sql);
+			await testDb!.execute({ sql });
 			return { count: 0, duration: 0 };
 		}
 	}
@@ -97,7 +98,6 @@ export function createTestDb(): D1Database {
 
 export function resetTestDb(): void {
 	if (testDb) {
-		testDb.close();
 		testDb = null;
 	}
 }

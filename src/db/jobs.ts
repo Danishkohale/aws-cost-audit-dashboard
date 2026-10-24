@@ -1,12 +1,12 @@
 /**
- * Job store — unified interface for both D1 (Workers) and SQLite (Bun/Node).
- * Import from here; implementation is swapped via build target.
+ * Job store — unified interface using libSQL (Turso).
+ * Works with both remote Turso and local file database.
  */
 import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
 import { round2 } from "../report/format";
 
-// Re-export from the appropriate backend
-export * from "./sqlite";
+// Re-export from the libSQL implementation
+export * from "./libsql";
 
 /** Mirrors REPORT_TTL_SEC = 30 min in app.py. */
 export const TTL_MS = 30 * 60 * 1000;

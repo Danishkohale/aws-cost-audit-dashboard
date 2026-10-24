@@ -4,9 +4,11 @@
 import type { Context, Hono } from "hono";
 import { buildDemoPayload } from "../demo/payload";
 import { cleanupOld, createJob, finalizeJob, insertFindings, randomId, setCost } from "../db/jobs";
+import { waitForSchema } from "../db/libsql";
 import { todayIso } from "../report/format";
 
 async function handleDemo(c: Context): Promise<Response> {
+	await waitForSchema();
 	await cleanupOld();
 
 	const payload = buildDemoPayload(todayIso());

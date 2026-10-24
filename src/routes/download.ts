@@ -23,7 +23,7 @@ export function registerDownloadRoutes(app: Hono): void {
 		}
 
 		const id = c.req.param("jobId");
-		const row = getRow(id);
+		const row = await getRow(id);
 		if (!row || row.status !== "done") {
 			return c.json({ error: "Report not ready. Wait for status=done." }, 409);
 		}

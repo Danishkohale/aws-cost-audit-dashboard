@@ -28,6 +28,7 @@ import {
 	setProgress,
 	randomId,
 } from "../db/jobs";
+import { waitForSchema } from "../db/libsql";
 import { clearCreds, getCreds, putCreds } from "../creds";
 import type { Finding } from "../types";
 
@@ -41,6 +42,7 @@ const runningJobs = new Set<string>();
 
 export function registerAuditRoutes(app: Hono): void {
 	app.post("/api/audit", async (c) => {
+		await waitForSchema();
 		await cleanupOld();
 
 		const data = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
