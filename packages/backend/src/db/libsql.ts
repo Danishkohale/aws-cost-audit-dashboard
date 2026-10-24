@@ -6,6 +6,7 @@
  * In production, it uses a singleton. In tests, it uses the injected instance.
  */
 import { createClient, type Client } from "@libsql/client";
+import { mkdirSync } from "node:fs";
 import { randomId } from "./jobs";
 import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
 import { round2 } from "../report/format";
@@ -23,6 +24,8 @@ function createDb(): Client {
 	if (process.env.VITEST || process.env.NODE_ENV === "test") {
 		return createClient({ url: ":memory:" });
 	}
+	// Fallback: local file DB — ensure the directory exists (code 14 otherwise)
+	mkdirSync("./data", { recursive: true });
 	return createClient({ url: "file:./data/audit.db" });
 }
 
