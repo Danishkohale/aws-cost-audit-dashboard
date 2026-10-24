@@ -1,5 +1,7 @@
 /**
- * AWS Cost Audit Dashboard — Bun + Hono server.
+ * AWS Cost Audit Dashboard — Bun + Hono API server.
+ * Frontend (React + Vite) is deployed separately on Cloudflare Workers;
+ * this backend serves only the JSON API.
  *
  * Routes:
  *   GET  /api/health              → JSON
@@ -8,7 +10,6 @@
  *   GET  /api/audit/:jobId        → job status/view
  *   GET  /api/audit/:jobId/stream → SSE progress stream
  *   GET  /api/download/:jobId     → json | html | docx report
- *   everything else               → static assets (SPA)
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -18,7 +19,7 @@ import { registerDownloadRoutes } from "./routes/download";
 
 const app = new Hono();
 
-// CORS configuration for Cloudflare Pages frontend
+// CORS — the Cloudflare Workers frontend origin (or * by default)
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "*";
 app.use("/*", cors({
   origin: FRONTEND_ORIGIN === "*" ? "*" : [FRONTEND_ORIGIN],
@@ -43,18 +44,8 @@ registerDownloadRoutes(app);
 // /api/* must always return JSON, never the HTML fallback
 app.all("/api/*", (c) => c.json({ error: "Not found. Is the backend up to date?" }, 404));
 
-// Serve static assets from ./public - dynamic import for Bun compatibility
-const isTest = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
-
-if (!isTest) {
-	// Dynamic import to avoid loading hono/bun in Node.js test environment
-	const { serveStatic } = await import("hono/bun");
-	app.get("*", serveStatic({ root: "./public" }));
-	app.get("*", serveStatic({ path: "./public/analyze.html" })); // SPA fallback
-} else {
-	// In tests, just 404 for non-API routes
-	app.get("*", (c) => c.json({ error: "Not found" }, 404));
-}
+// Everything else → 404 (frontend lives on Cloudflare)
+app.all("*", (c) => c.json({ error: "Not found" }, 404));
 
 export { app };
 export default app;

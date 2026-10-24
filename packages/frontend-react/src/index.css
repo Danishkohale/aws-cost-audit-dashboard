@@ -1,0 +1,22 @@
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --line: #232a33;
+  --fg: #e6edf3;
+  --dim: #8b98a5;
+  --acc: #4ade80;
+  --acc2: #22c55e;
+  --err: #f87171;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
