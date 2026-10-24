@@ -1,0 +1,9 @@
+node_modules
+.wrangler
+dist
+coverage
+package-lock.json
+worker-configuration.d.ts
+
+# The UI is a verbatim copy of the original Python project's frontend/.
+public

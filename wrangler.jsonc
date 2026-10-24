@@ -1,0 +1,43 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "aws-cost-audit-dashboard",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-18",
+	"compatibility_flags": ["nodejs_compat"],
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+	},
+
+	// Static UI: a copy of the original frontend/ (index.html, app.js, styles.css).
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+	},
+
+	// Job metadata + findings. D1 (SQLite) is strongly consistent, so progress
+	// reads are safe — unlike KV, which is eventually consistent.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "audit-dashboard",
+			"database_id": "0c872e2f-a799-4e91-a9a4-7133b12e6aea",
+			"migrations_dir": "migrations",
+		},
+	],
+
+	// Only the credentials live in a Durable Object: strong consistency (no KV
+	// propagation delay) plus an alarm-based TTL wipe. All audit data is in D1.
+	"durable_objects": {
+		"bindings": [{ "name": "CREDS", "class_name": "CredsVault" }],
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["CredsVault"] }],
+
+	// The SDK's `browser` build of this package uses `DOMParser`, which workerd
+	// does not provide; point it at the pure-JS parser instead (see
+	// src/shims/xml-builder.ts).
+	"alias": {
+		"@aws-sdk/xml-builder": "./src/shims/xml-builder.ts",
+	},
+}

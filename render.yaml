@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: aws-cost-audit-dashboard
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DB_DIR
+        value: /data
+      - key: NODE_ENV
+        value: production

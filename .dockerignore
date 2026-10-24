@@ -1,0 +1,17 @@
+node_modules
+dist
+data
+*.log
+.DS_Store
+.git
+.gitignore
+README.md
+test
+*.test.ts
+vitest.config.ts
+tsconfig.json
+eslint.config.js
+prettier.config.js
+wrangler.jsonc
+worker-configuration.d.ts
+migrations
