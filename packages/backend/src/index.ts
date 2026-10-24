@@ -11,11 +11,22 @@
  *   everything else               → static assets (SPA)
  */
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { registerAuditRoutes } from "./routes/audit";
 import { registerDemoRoutes } from "./routes/demo";
 import { registerDownloadRoutes } from "./routes/download";
 
 const app = new Hono();
+
+// CORS configuration for Cloudflare Pages frontend
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "*";
+app.use("/*", cors({
+  origin: FRONTEND_ORIGIN === "*" ? "*" : [FRONTEND_ORIGIN],
+  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  maxAge: 86400,
+}));
 
 app.get("/api/health", (c) =>
 	c.json({
