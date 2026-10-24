@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ConnectForm } from "./components/ConnectForm";
-import { ReportView } from "./components/ReportView";
+import { FindingsSection } from "./components/FindingsSection";
+import { JobInfoSection } from "./components/JobInfoSection";
+import { OverviewSection } from "./components/OverviewSection";
+import { RecommendationsSection } from "./components/RecommendationsSection";
+import { SavingsByService } from "./components/SavingsByService";
 import { ScanView } from "./components/ScanView";
+import { Sidebar } from "./components/Sidebar";
 import { getJob, runDemo, startAudit, type Job } from "./lib/api";
+import { computeMetrics, DEFAULT_RATE } from "./lib/metrics";
 import { buildHtmlReport, buildJsonReport, downloadBlob } from "./lib/report";
 
 type View = "form" | "scan" | "report";
@@ -11,8 +17,10 @@ type View = "form" | "scan" | "report";
 function App() {
 	const [view, setView] = useState<View>("form");
 	const [job, setJob] = useState<Job | null>(null);
+	const [active, setActive] = useState("overview");
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const mainRef = useRef<HTMLElement>(null);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	const stopPolling = () => {
@@ -22,7 +30,6 @@ function App() {
 		}
 	};
 
-	/** Poll the job until it finishes or errors. */
 	const poll = useCallback(async (jobId: string) => {
 		stopPolling();
 		pollRef.current = setInterval(async () => {
@@ -32,7 +39,7 @@ function App() {
 				if (j.status === "done") {
 					stopPolling();
 					setView("report");
-					window.scrollTo({ top: 0 });
+					mainRef.current?.scrollTo({ top: 0 });
 				} else if (j.status === "error") {
 					stopPolling();
 					setError(j.error ?? "Audit failed");
@@ -69,7 +76,7 @@ function App() {
 			const j = await getJob(job_id);
 			setJob(j);
 			setView("report");
-			window.scrollTo({ top: 0 });
+			mainRef.current?.scrollTo({ top: 0 });
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
@@ -97,26 +104,51 @@ function App() {
 		}
 	};
 
+	const nav = (id: string) => {
+		setActive(id);
+		document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+	};
+
+	const m = job && view === "report" && job.summary ? computeMetrics(job) : null;
+
 	return (
-		<>
-			<header className="top">
-				<div className="top-in">
-					<a href="/" className="brand">
-						<span className="mark">AWS</span> Cost Audit <em>read-only</em>
-					</a>
+		<div className="app">
+			<Sidebar
+				onNav={nav}
+				active={active}
+				loaded={view === "report"}
+				jobId={job?.job_id ?? null}
+				date={job?.summary?.date ?? null}
+			/>
+
+			<main className="main" ref={mainRef}>
+				<div className="main-in">
+					{view === "form" && (
+						<ConnectForm error={error} busy={busy} onRun={runAudit} onDemo={runSample} />
+					)}
+					{view === "scan" && job && <ScanView job={job} />}
+
+					{view === "report" && job?.summary && job.payload && m && (
+						<>
+							<div className="rep-head">
+								<h1>Cost Optimization Report</h1>
+								<div className="dl">
+									<button className="btn" onClick={() => download("json")}>JSON</button>
+									<button className="btn" onClick={() => download("html")}>HTML</button>
+									<button className="btn" onClick={() => { setJob(null); setView("form"); }}>← New audit</button>
+								</div>
+							</div>
+							<OverviewSection job={job} m={m} />
+							<SavingsByService m={m} total={m.estMonthly} />
+							<FindingsSection m={m} total={m.estMonthly} />
+							<RecommendationsSection m={m} rate={DEFAULT_RATE} />
+							<JobInfoSection job={job} m={m} />
+						</>
+					)}
 				</div>
-			</header>
-			<main className="wrap">
-				{view === "form" && <ConnectForm error={error} busy={busy} onRun={runAudit} onDemo={runSample} />}
-				{view === "scan" && job && <ScanView job={job} />}
-				{view === "report" && job?.summary && (
-					<ReportView job={job} onNew={() => { setJob(null); setView("form"); }} onDownload={download} />
-				)}
 			</main>
-			<footer className="foot">Keys live only in server memory for 30 min. No storage, no logs.</footer>
-		</>
+		</div>
 	);
 }
 
-// Auto-run demo when ?demo=1
 export default App;
