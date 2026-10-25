@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import type { Finding } from "../lib/api";
+import type { Finding, RecDetail } from "../lib/api";
 import { currentCostMo, fmt$, type Metrics } from "../lib/metrics";
-import { remediationSteps } from "../lib/remediation";
+
+const CONF_LABEL = { high: "High", medium: "Medium", low: "Low" } as const;
+const CONF_CLASS = { high: "conf-h", medium: "conf-m", low: "conf-l" } as const;
 
 /** Compact meta detail line — backend-tracked attributes only. */
 function metaLine(f: Finding): string {
@@ -22,11 +24,76 @@ function metaLine(f: Finding): string {
 	return out.join(" · ");
 }
 
+/** The engine's structured, evidence-based remediation plan. */
+function EnginePlan({ rec }: { rec: RecDetail }) {
+	return (
+		<div className="engine">
+			<div className="dgrid">
+				<div><label>Current config</label><p>{rec.current_config}</p></div>
+				<div><label>Detected issue</label><p>{rec.issue}</p></div>
+				<div><label>Confidence</label>
+					<p><span className={`conf ${CONF_CLASS[rec.confidence]}`}>{CONF_LABEL[rec.confidence]}</span> {rec.confidence_basis}</p>
+				</div>
+				<div><label>Priority</label><p>{rec.priority_band} · score {rec.priority_score}</p></div>
+			</div>
+
+			<label className="dlabel">Evidence (measured)</label>
+			<ul className="evidence">
+				{rec.evidence.map((e, i) => <li key={i}>{e}</li>)}
+			</ul>
+
+			{rec.options.length > 1 && (
+				<>
+					<label className="dlabel">Options compared</label>
+					<div className="opts">
+						{rec.options.map((o, i) => (
+							<div key={i} className={`opt ${i === rec.selected ? "best" : ""}`}>
+								<span className="optn">{i === rec.selected ? "✓" : String.fromCharCode(65 + i)}</span>
+								<div>
+									<b>{o.title}</b>
+									<p>{o.change}</p>
+									<p className="dim">
+										{o.saving_mo !== null && <>est. save {fmt$(o.saving_mo)}/mo · </>}
+										{o.trade_off}
+									</p>
+								</div>
+							</div>
+						))}
+					</div>
+				</>
+			)}
+
+			<p className="dwhy"><b>Why this is best</b> {rec.why_selected}</p>
+			<p className="drec"><b>Do this</b> {rec.change}</p>
+			<div className="costline">
+				<span><b>Cost</b> {rec.current_cost_mo !== null ? `${fmt$(rec.current_cost_mo)}/mo` : "not in window"} → {rec.projected_cost_mo !== null ? `${fmt$(rec.projected_cost_mo)}/mo after the change` : "projected not computable"}</span>
+				{rec.saving_mo !== null && <span className="green"><b>Net saving</b> {fmt$(rec.saving_mo)}/mo · {fmt$(rec.saving_an ?? rec.saving_mo * 12)}/yr</span>}
+			</div>
+			<p className="dcalc"><b>Calculation</b> {rec.calc_method}</p>
+			{rec.estimate_note && <p className="dcalc dim">{rec.estimate_note}</p>}
+
+			<label className="dlabel">Risks</label>
+			<ul className="risks">
+				{rec.risks.map((r, i) => <li key={i}>{r}</li>)}
+			</ul>
+
+			{rec.data_gaps.length > 0 && (
+				<>
+					<label className="dlabel dim2">Data gaps — what is missing, not guessed</label>
+					<ul className="risks gap">
+						{rec.data_gaps.map((r, i) => <li key={i}>{r}</li>)}
+					</ul>
+				</>
+			)}
+			<p className="dmeta">{rec.tracking}</p>
+		</div>
+	);
+}
+
 /** One finding row — expandable for detail. */
 function FindingRow({ f, seq }: { f: Finding; seq: number }) {
 	const [open, setOpen] = useState(false);
 	const cost = currentCostMo(f);
-	const steps = remediationSteps(f);
 
 	return (
 		<div className="frow">
@@ -48,13 +115,14 @@ function FindingRow({ f, seq }: { f: Finding; seq: number }) {
 					</div>
 					{metaLine(f) && <p className="dmeta">{metaLine(f)}</p>}
 					<p className="ddetail"><b>Detail</b> {f.detail}</p>
-					<label className="dlabel">How to save it</label>
-					<ol className="howto">
-						{steps.map((s, i) => (
-							<li key={i}>{s}</li>
-						))}
-					</ol>
-					<p className="drec"><b>Do this</b> {f.recommendation}</p>
+					{f.rec ? (
+						<>
+							<EnginePlan rec={f.rec} />
+							<p className="drec sec"><b>Also scanned as</b> {f.recommendation}</p>
+						</>
+					) : (
+						<p className="drec"><b>Do this</b> {f.recommendation}</p>
+					)}
 					<p className="fnum dim">Finding #{seq}</p>
 				</div>
 			)}

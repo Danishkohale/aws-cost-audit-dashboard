@@ -9,6 +9,7 @@ import { GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import type { Finding, Payload } from "../types";
 import type { Aws } from "./clients";
 import { BASE_STEPS, DETAIL_STEPS } from "../collect/registry";
+import { enrichFindings } from "../rules/recs";
 import { auditLiveCost } from "./cost-explorer";
 import { maskKey } from "./guard";
 import { errMsg } from "./util";
@@ -70,13 +71,16 @@ export async function runAwsAudit(aws: Aws, opts: AuditOptions): Promise<Payload
 	const added = findings.length - before;
 	log(`[detail] done (+${added} detailed rows).`, 97);
 
+	// Recommendation engine: structured, evidence-based remediation per finding.
+	const enriched = enrichFindings(findings);
+
 	return {
 		date: todayIso(),
 		region: aws.region,
 		lookback_days: days,
 		live_cost_by_service: cost,
 		cost_note: note,
-		findings,
+		findings: enriched,
 	};
 }
 

@@ -9,7 +9,7 @@ import { SavingsByService } from "./components/SavingsByService";
 import { ScanView } from "./components/ScanView";
 import { Sidebar } from "./components/Sidebar";
 import { apiUrl, getJob, runDemo, startAudit, type Job } from "./lib/api";
-import { computeMetrics, DEFAULT_RATE } from "./lib/metrics";
+import { computeMetrics } from "./lib/metrics";
 import { buildHtmlReport, buildJsonReport, downloadBlob } from "./lib/report";
 
 type View = "form" | "scan" | "report";
@@ -150,7 +150,7 @@ function App() {
 							<OverviewSection job={job} m={m} />
 							<SavingsByService m={m} total={m.estMonthly} />
 							<FindingsSection m={m} total={m.estMonthly} />
-							<RecommendationsSection m={m} rate={DEFAULT_RATE} />
+							<RecommendationsSection m={m} />
 							<JobInfoSection job={job} m={m} />
 						</>
 					)}

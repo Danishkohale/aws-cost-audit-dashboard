@@ -8,6 +8,7 @@
 import { createClient, type Client } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { randomId } from "./jobs";
+import { packMeta, unpackMeta } from "./findingrow";
 import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
 import { round2 } from "../report/format";
 import { todayIso } from "../report/format";
@@ -217,7 +218,7 @@ export async function insertFindings(id: string, findings: Finding[], startSeq: 
 				f.detail,
 				Number(f.est_monthly_saving_usd) || 0,
 				f.recommendation,
-				f.meta ? JSON.stringify(f.meta) : null,
+				packMeta(f),
 			],
 		}));
 		
@@ -250,8 +251,8 @@ export async function getFindings(id: string): Promise<Finding[]> {
 				detail: r.detail as string,
 				est_monthly_saving_usd: r.saving as number,
 				recommendation: r.recommendation as string,
+				...unpackMeta(r.meta),
 			};
-			if (r.meta) f.meta = JSON.parse(r.meta as string);
 			return f;
 		});
 	});

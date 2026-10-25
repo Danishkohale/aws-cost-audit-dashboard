@@ -6,6 +6,7 @@ import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
 import { round2 } from "../report/format";
 import { todayIso } from "../report/format";
 import { randomId } from "./jobs";
+import { packMeta, unpackMeta } from "./findingrow";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -152,7 +153,7 @@ export function insertFindings(id: string, findings: Finding[], startSeq: number
 				f.detail,
 				Number(f.est_monthly_saving_usd) || 0,
 				f.recommendation,
-				f.meta ? JSON.stringify(f.meta) : null
+				packMeta(f)
 			);
 		}
 	});
@@ -177,18 +178,15 @@ export function getFindings(id: string): Finding[] {
 		recommendation: string;
 		meta: string | null;
 	}[];
-	return rows.map((r) => {
-		const f: Finding = {
-			service: r.service,
-			resource: r.resource,
-			category: r.category,
-			detail: r.detail,
-			est_monthly_saving_usd: r.saving,
-			recommendation: r.recommendation,
-		};
-		if (r.meta) f.meta = JSON.parse(r.meta);
-		return f;
-	});
+	return rows.map((r) => ({
+		service: r.service,
+		resource: r.resource,
+		category: r.category,
+		detail: r.detail,
+		est_monthly_saving_usd: r.saving,
+		recommendation: r.recommendation,
+		...unpackMeta(r.meta),
+	}));
 }
 
 export function buildSummary(payload: Payload, docxAvailable: boolean): Summary {

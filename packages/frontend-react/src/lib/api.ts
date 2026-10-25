@@ -20,6 +20,38 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	return body;
 }
 
+/** One candidate remediation option from the recommendation engine. */
+export interface RecOption {
+	title: string;
+	change: string;
+	saving_mo: number | null;
+	trade_off: string;
+}
+
+/** Evidence-based remediation plan produced by the backend recommendation engine. */
+export interface RecDetail {
+	current_config: string;
+	issue: string;
+	evidence: string[];
+	options: RecOption[];
+	selected: number;
+	why_selected: string;
+	change: string;
+	current_cost_mo: number | null;
+	projected_cost_mo: number | null;
+	saving_mo: number | null;
+	saving_an: number | null;
+	calc_method: string;
+	confidence: "high" | "medium" | "low";
+	confidence_basis: string;
+	risks: string[];
+	data_gaps: string[];
+	estimate_note: string | null;
+	priority_score: number;
+	priority_band: string;
+	tracking: string;
+}
+
 // --- Types -------------------------------------------------------------------
 export interface Finding {
 	service: string;
@@ -29,6 +61,7 @@ export interface Finding {
 	est_monthly_saving_usd: number;
 	recommendation: string;
 	meta?: Record<string, unknown>;
+	rec?: RecDetail;
 }
 
 export interface Summary {

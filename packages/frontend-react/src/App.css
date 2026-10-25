@@ -115,6 +115,33 @@
   font-size: .76rem; color: var(--fg); display: flex; flex-direction: column; gap: .3rem;
 }
 .howto li::marker { color: var(--acc); font-weight: 700; }
+
+/* ── Recommendation engine block ─────────────────────────────────── */
+.engine {
+  border-left: 2px solid var(--acc); margin: .7rem 0 0; padding: .1rem 0 .1rem .7rem;
+}
+.engine .dgrid { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.conf {
+  display: inline-block; padding: .1rem .45rem; border-radius: .8rem;
+  font-size: .66rem; font-weight: 700; letter-spacing: .03em; margin-right: .3rem;
+}
+.conf-h { background: rgba(46,160,67,.18); color: #2ea043; }
+.conf-m { background: rgba(210,153,34,.18); color: #d29922; }
+.conf-l { background: rgba(248,81,73,.15); color: #f85149; }
+.evidence, .risks { margin: .15rem 0 .2rem 1.1rem; padding: 0; display: flex; flex-direction: column; gap: .25rem; font-size: .74rem; color: var(--fg); }
+.evidence li::marker, .risks li::marker { color: var(--acc); font-weight: 700; }
+.risks.gap { color: var(--dim); }
+.risks.gap li::marker { color: var(--dim); }
+.opts { display: flex; flex-direction: column; gap: .45rem; margin: .2rem 0; }
+.opt { display: grid; grid-template-columns: 1.5rem 1fr; gap: .5rem; align-items: start; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: .4rem; font-size: .74rem; }
+.opt p { margin: .15rem 0 0; color: var(--dim); font-size: .72rem; }
+.opt b { font-size: .75rem; }
+.opt.best { border-color: var(--acc); background: rgba(46,160,67,.07); }
+.optn { color: var(--acc); font-weight: 700; }
+.dwhy, .dcalc, .costline { font-size: .75rem; margin: .5rem 0 0; }
+.dwhy b, .dcalc b, .costline b { color: var(--dim); }
+.costline { display: flex; flex-wrap: wrap; gap: 1rem; color: var(--fg); }
+.dlabel.dim2 { color: var(--dim); }
 .ddetail b, .drec b, .dgrid label { color: var(--dim); }
 .drec { color: var(--fg); }
 .fnum { font-size: .62rem; }

@@ -6,13 +6,14 @@
  */
 import type { Payload } from "../types";
 import { CATEGORY } from "../rules/templates";
+import { enrichFindings } from "../rules/recs";
 import { DEFAULT_REGION } from "../rules/thresholds";
 
 /**
  * @param dateIso ISO date (YYYY-MM-DD) — injected so tests are deterministic.
  */
 export function buildDemoPayload(dateIso: string): Payload {
-	return {
+	const payload = {
 		date: dateIso,
 		region: DEFAULT_REGION,
 		lookback_days: 14,
@@ -457,4 +458,8 @@ export function buildDemoPayload(dateIso: string): Payload {
 			},
 		],
 	};
+
+	// Attach structured, evidence-based recommendation plans (rules/recs.ts).
+	payload.findings = enrichFindings(payload.findings);
+	return payload;
 }

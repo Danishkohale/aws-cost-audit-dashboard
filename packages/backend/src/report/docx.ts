@@ -92,6 +92,61 @@ interface CellOpts {
 	fill?: string;
 }
 
+/** One "Label:  value" paragraph with a bold label run. */
+function labelled(label: string, value: string, color = SLATE): Paragraph {
+	return new Paragraph({
+		spacing: { before: 20 },
+		children: [run(`${label}:  `, true, SLATE), run(value, false, color)],
+	});
+}
+
+/**
+ * The detail sub-row content: measured detail plus the engine's structured,
+ * evidence-based remediation plan (target, projected cost, arithmetic,
+ * confidence, risks, data gaps).
+ */
+function planRows(f: Finding): Paragraph[] {
+	const paras: Paragraph[] = [new Paragraph({ children: [run(`Detail: ${f.detail}`, false, SLATE)] })];
+	const r = f.rec;
+	if (!r) return paras;
+	paras.push(labelled("Current config", r.current_config));
+	paras.push(labelled("Detected issue", r.issue));
+	if (r.evidence.length > 0) paras.push(labelled("Evidence", r.evidence.join("; ")));
+	if (r.options.length > 1) {
+		paras.push(
+			labelled(
+				"Options considered",
+				r.options.map((o, i) => `${i === r.selected ? "✓ " : "• "}${o.title}${o.saving_mo !== null ? ` (${o.saving_mo ? "$" + pyNum(o.saving_mo) : ""}/mo avoided)` : ""} — ${o.trade_off}`).join("  |  "),
+			),
+		);
+	}
+	paras.push(labelled("Recommended change", r.change, DARK));
+	if (r.current_cost_mo !== null || r.projected_cost_mo !== null) {
+		paras.push(
+			labelled(
+				"Cost impact",
+				`${r.current_cost_mo !== null ? "$" + pyNum(r.current_cost_mo) + "/mo" : "current cost not in window"} → ${r.projected_cost_mo !== null ? "$" + pyNum(r.projected_cost_mo) + "/mo after the change" : "projected cost not computable"}`,
+			),
+		);
+	}
+	if (r.saving_mo !== null) {
+		paras.push(
+			new Paragraph({
+				spacing: { before: 20 },
+				children: [run(`Net saving:  `, true, SLATE), run(`$${pyNum(r.saving_mo)}/mo · $${pyNum(r.saving_an ?? r.saving_mo * 12)}/yr`, true, GREEN)],
+			}),
+		);
+	}
+	paras.push(labelled("Calculation method", r.calc_method));
+	paras.push(labelled("Why this option", r.why_selected));
+	const conf = r.confidence === "high" ? "High" : r.confidence === "medium" ? "Medium" : "Low";
+	paras.push(labelled(`Confidence: ${conf}`, r.confidence_basis));
+	if (r.estimate_note) paras.push(labelled("Estimate note", r.estimate_note));
+	if (r.risks.length > 0) paras.push(labelled("Risks", r.risks.join("; ")));
+	if (r.data_gaps.length > 0) paras.push(labelled("Data gaps (not inventable from available data)", r.data_gaps.join("; ")));
+	return paras;
+}
+
 function cell(value: string, opts: CellOpts = {}): TableCell {
 	return new TableCell({
 		shading: opts.fill ? { type: ShadingType.CLEAR, color: "auto", fill: opts.fill } : undefined,
@@ -235,7 +290,7 @@ export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
 						new TableCell({
 							columnSpan: 6,
 							shading: fill ? { type: ShadingType.CLEAR, color: "auto", fill } : undefined,
-							children: [new Paragraph({ children: [run(`Detail: ${f.detail}`, false, SLATE)] })],
+							children: planRows(f),
 						}),
 					],
 				}),
@@ -255,7 +310,16 @@ export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
 			}),
 		);
 		for (const f of review) {
-			children.push(new Paragraph({ children: [run(`•  ${f.resource}`, true), run(`  (${f.service} · ${f.category}) — ${f.recommendation}`, false, SLATE)] }));
+			const r = f.rec;
+			children.push(
+				new Paragraph({
+					children: [
+						run(`•  ${f.resource}`, true),
+						run(`  (${f.service} · ${f.category}) — ${f.recommendation}`, false, SLATE),
+					],
+				}),
+			);
+			if (r) children.push(new Paragraph({ children: [run(`    Plan: ${r.change}. ${r.calc_method}. Confidence: ${r.confidence}${r.data_gaps.length > 0 ? ` · Data gaps: ${r.data_gaps.join("; ")}` : ""}`, false, SLATE)] }));
 		}
 	}
 
