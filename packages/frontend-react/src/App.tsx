@@ -8,7 +8,7 @@ import { RecommendationsSection } from "./components/RecommendationsSection";
 import { SavingsByService } from "./components/SavingsByService";
 import { ScanView } from "./components/ScanView";
 import { Sidebar } from "./components/Sidebar";
-import { getJob, runDemo, startAudit, type Job } from "./lib/api";
+import { apiUrl, getJob, runDemo, startAudit, type Job } from "./lib/api";
 import { computeMetrics, DEFAULT_RATE } from "./lib/metrics";
 import { buildHtmlReport, buildJsonReport, downloadBlob } from "./lib/report";
 
@@ -84,21 +84,29 @@ function App() {
 		}
 	};
 
-	const download = async (fmt: "json" | "html") => {
+	const download = async (fmt: "json" | "html" | "docx") => {
 		if (!job) return;
 		try {
-			const j = await getJob(job.job_id);
-			if (j.status !== "done" || !j.summary) {
-				setError("Report not ready yet.");
-				return;
-			}
-			const region = j.summary.region;
-			const date = j.summary.date;
-			if (fmt === "json") {
-				downloadBlob(new Blob([buildJsonReport(j)], { type: "application/json" }), `cost-optimization-${region}-${date}.json`);
+			let filename: string;
+			let blob: Blob;
+			if (fmt === "docx") {
+				// DOCX is generated server-side (proper Word structure, per-service tables).
+				const res = await fetch(apiUrl(`/api/download/${job.job_id}?format=docx`));
+				if (!res.ok) throw new Error(`DOCX download failed (${res.status})`);
+				blob = await res.blob();
+				filename = `cost-optimization-${job.summary!.region}-${job.summary!.date}.docx`;
 			} else {
-				downloadBlob(new Blob([buildHtmlReport(j)], { type: "text/html" }), `cost-optimization-${region}-${date}.html`);
+				const j = await getJob(job.job_id);
+				if (j.status !== "done" || !j.summary) {
+					setError("Report not ready yet.");
+					return;
+				}
+				filename = `cost-optimization-${j.summary.region}-${j.summary.date}.${fmt}`;
+				blob = fmt === "json"
+					? new Blob([buildJsonReport(j)], { type: "application/json" })
+					: new Blob([buildHtmlReport(j)], { type: "text/html" });
 			}
+			downloadBlob(blob, filename);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		}
@@ -135,6 +143,7 @@ function App() {
 								<div className="dl">
 									<button className="btn" onClick={() => download("json")}>JSON</button>
 									<button className="btn" onClick={() => download("html")}>HTML</button>
+									<button className="btn" onClick={() => download("docx")}>DOCX</button>
 									<button className="btn" onClick={() => { setJob(null); setView("form"); }}>← New audit</button>
 								</div>
 							</div>

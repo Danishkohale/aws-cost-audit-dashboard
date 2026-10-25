@@ -47,7 +47,7 @@ describe("demo API (end-to-end through SQLite, no AWS)", () => {
 		expect(job.progress).toBe(100);
 		expect(job.summary?.findings_count).toBe(31);
 		expect(job.summary?.total_savings).toBeCloseTo(2151.26, 2);
-		expect(job.summary?.docx_available).toBe(false);
+		expect(job.summary?.docx_available).toBe(true);
 		expect(job.payload?.findings).toHaveLength(31);
 	});
 
@@ -84,11 +84,17 @@ describe("demo API (end-to-end through SQLite, no AWS)", () => {
 		expect(report.region).toBe(job.summary?.region);
 	});
 
-	it("returns the Python fallback for docx (generation deferred)", async () => {
+	it("downloads a structured DOCX report with per-service tables", async () => {
 		const jobId = await createDemo();
 		const res = await req(`/api/download/${jobId}?format=docx`);
-		expect(res.status).toBe(404);
-		expect(res.headers.get("content-type")).toContain("application/json");
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toContain("wordprocessingml.document");
+		expect(res.headers.get("content-disposition")).toContain('.docx"');
+		// DOCX is a ZIP container — the PK header must be present.
+		const bytes = new Uint8Array(await res.arrayBuffer());
+		expect(bytes.length).toBeGreaterThan(1000);
+		expect(bytes[0]).toBe(0x50); // P
+		expect(bytes[1]).toBe(0x4b); // K
 	});
 });
 

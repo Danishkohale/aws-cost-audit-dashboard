@@ -301,7 +301,7 @@ export async function finalizeJob(id: string): Promise<void> {
 			date: (row.created_at as string).slice(0, 10),
 			lookback_days: row.days as number ?? 14,
 			cost_note: row.cost_note as string ?? "",
-			docx_available: false,
+			docx_available: true,
 		};
 		await db.execute({
 			sql: "UPDATE jobs SET status = 'done', progress = 100, summary = ?, finished_at = ? WHERE id = ?",

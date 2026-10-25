@@ -2,6 +2,7 @@
  * Download route — rebuilds report on demand from SQLite.
  */
 import type { Hono } from "hono";
+import { buildDocx } from "../report/docx";
 import { buildHtml } from "../report/html";
 import { buildJson } from "../report/json";
 import { getRow, jobView } from "../db/jobs";
@@ -29,7 +30,20 @@ export function registerDownloadRoutes(app: Hono): void {
 		}
 
 		if (fmt === "docx") {
-			return c.json({ error: "DOCX not available (python-docx missing?)." }, 404);
+			const view = await jobView(id);
+			const payload = view?.payload;
+			if (!payload) return c.json({ error: "DOCX not available." }, 404);
+
+			const body = await buildDocx(payload);
+			const region = view?.summary?.region || "aws";
+			const date = view?.summary?.date || "report";
+			const filename = `cost-optimization-${region}-${date}.docx`;
+			return new Response(body, {
+				headers: {
+					"Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+					"Content-Disposition": `attachment; filename="${filename}"`,
+				},
+			});
 		}
 
 		const view = await jobView(id);
