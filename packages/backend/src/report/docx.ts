@@ -1,18 +1,24 @@
 /**
- * DOCX report builder — properly structured Word report.
+ * DOCX report builder — properly structured, professionally styled Word report.
  *
- * Structure:
- *   1. Executive summary (KPI table, estimates clearly labeled)
- *   2. Savings by Service (service-wise savings table)
- *   3. Findings — one sub-table per AWS service
- *   4. Items for review (no measured saving)
- *   5. Prioritized savings plan
+ * Structure & language:
+ *   Title page block  → title, subtitle, account/date context
+ *   1. Executive Summary            (KPI table, estimates labeled)
+ *   2. Potential Monthly Savings by Service (service-wise savings table)
+ *   3. Findings & Recommended Actions by Service (one table per service)
+ *   4. Additional Items Requiring Review (no measured saving)
+ *   5. Recommended Action Plan
+ *
+ * Styling:
+ *   - Dark slate table headers with white bold text
+ *   - Alternating (zebra) row shading
+ *   - Green (16A34A) for savings KPIs, totals and saving cells
+ *   - Colored section headings
  *
  * Data rules (unchanged from the dashboard):
  *   - Only genuine savings (est. > $0/mo) appear in savings tables.
  *   - Current cost comes only from backend-computed meta; "—" when unknown.
- *   - Effort hours are planning estimates via the same keyword heuristic
- *     as the UI (`DEFAULT eff. 1h`), labeled as estimates in footnotes.
+ *   - Effort hours are planning estimates via a keyword heuristic, labeled.
  *
  * Returns an ArrayBuffer so it works in both Node (tests) and Bun.
  */
@@ -21,6 +27,7 @@ import {
 	HeadingLevel,
 	Packer,
 	Paragraph,
+	ShadingType,
 	Table,
 	TableCell,
 	TableRow,
@@ -28,10 +35,17 @@ import {
 } from "docx";
 import type { Finding, Payload } from "../types";
 import { money, pyNum } from "./format";
-import { PRIORITIZED_PLAN, REPORT_TITLE, DETAIL_REC_SEPARATOR } from "../rules/templates";
+import { PRIORITIZED_PLAN } from "../rules/templates";
 
 /** 10pt expressed in half-points, as required by the docx API. */
 const TEN_PT = 20;
+
+// Palette (hex, no #)
+const GREEN = "15803D"; // savings emphasis
+const DARK = "1F2937"; // table header fill
+const ZEBRA = "F3F4F6"; // alternating row fill
+const WHITE = "FFFFFF";
+const SLATE = "475569"; // muted copy
 
 interface Effort {
 	hours: number;
@@ -68,24 +82,33 @@ function currentCostMo(f: Finding): number | null {
 	return null;
 }
 
-function run(value: string, bold = false): TextRun {
-	return new TextRun({ text: value, size: TEN_PT, bold });
+function run(value: string, bold = false, color?: string): TextRun {
+	return new TextRun({ text: value, size: TEN_PT, bold, color });
 }
 
-function para(value: string, bold = false): Paragraph {
-	return new Paragraph({ children: [run(value, bold)] });
+interface CellOpts {
+	bold?: boolean;
+	color?: string;
+	fill?: string;
+}
+
+function cell(value: string, opts: CellOpts = {}): TableCell {
+	return new TableCell({
+		shading: opts.fill ? { type: ShadingType.CLEAR, color: "auto", fill: opts.fill } : undefined,
+		children: [new Paragraph({ children: [run(value, opts.bold ?? false, opts.color)] })],
+	});
+}
+
+function headRow(labels: string[]): TableRow {
+	return new TableRow({ children: labels.map((l) => cell(l, { bold: true, color: WHITE, fill: DARK })) });
+}
+
+function row(values: string[], opts: CellOpts = {}): TableRow {
+	return new TableRow({ children: values.map((v) => cell(v, opts)) });
 }
 
 function heading(value: string, level: HeadingLevel = HeadingLevel.HEADING_2): Paragraph {
-	return new Paragraph({ heading: level, children: [run(value)] });
-}
-
-function cell(value: string, bold = false): TableCell {
-	return new TableCell({ children: [new Paragraph({ children: [run(value, bold)] })] });
-}
-
-function row(values: string[], bold = false): TableRow {
-	return new TableRow({ children: values.map((v) => cell(v, bold)) });
+	return new Paragraph({ heading: level, children: [run(value, true, level === HeadingLevel.HEADING_3 ? GREEN : DARK)] });
 }
 
 export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
@@ -106,91 +129,164 @@ export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
 
 	const children: (Paragraph | Table)[] = [];
 
-	// Title + meta
-	children.push(heading(REPORT_TITLE, HeadingLevel.HEADING_1));
+	// ── Title block ────────────────────────────────────────────────────
+	children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [run("AWS Cost Optimization Report", true, DARK)] }));
+	children.push(new Paragraph({ children: [run("Idle, over-provisioned and obsolete resource findings", false, SLATE)] }));
 	children.push(
-		para(
-			`Region: ${payload.region}  |  Date: ${payload.date}  |  Lookback: ${payload.lookback_days} days`,
-		),
+		new Paragraph({
+			children: [
+				run(`Account region: ${payload.region}    Audit date: ${payload.date}    Cost-Explorer lookback: ${payload.lookback_days} days`, false, SLATE),
+			],
+		}),
 	);
-	children.push(para(payload.cost_note));
-	children.push(para("All savings figures are ESTIMATES produced by this audit. Actual savings become measurable only after actions are applied and the next audit is run.", true));
+	if (payload.cost_note) children.push(new Paragraph({ children: [run(payload.cost_note, false, SLATE)] }));
+	children.push(
+		new Paragraph({
+			spacing: { before: 120, after: 240 },
+			children: [
+				run("Every dollar figure in this report is an estimate produced by this audit. Actual savings become measurable only after the recommended actions are applied and the next audit is run.", true, SLATE),
+			],
+		}),
+	);
 
-	// 1. Executive summary
+	// ── 1. Executive summary ──────────────────────────────────────────
 	children.push(heading("1. Executive Summary"));
 	children.push(
 		new Table({
 			style: "TableGrid",
 			rows: [
-				row(["Metric", "Value"], true),
-				row(["Findings", `${payload.findings.length} total (${actionable.length} actionable, ${review.length} for review)`]),
-				row(["Est. monthly savings", `$${money(totalMonthly)}`]),
-				row(["Est. annual savings", `$${money(totalAnnual)}`]),
-				row(["Est. implementation effort", `${implHours}h labour-only, planning estimate (≤ $${Math.round(implHours * DEFAULT_RATE)} at ${DEFAULT_RATE}/h)`]),
+				headRow(["Metric", "Value"]),
+				zebra([
+					cell("Audited resources with findings", { fill: ZEBRA }),
+					cell(`${payload.findings.length} total — ${actionable.length} actionable, ${review.length} for review`, { fill: ZEBRA }),
+				]),
+				row(["Estimated monthly savings", `$${money(totalMonthly)}`]),
+				zebra([
+					cell("Estimated annual savings (12 × monthly)", { fill: ZEBRA }),
+					cell(`$${money(totalAnnual)}`, { bold: true, color: GREEN, fill: ZEBRA }),
+				]),
+				row(["Estimated implementation effort", `${implHours} h of work, planning estimate only (≈ $${Math.round(implHours * DEFAULT_RATE)} labour at ${DEFAULT_RATE}/h)`]),
 			],
 		}),
 	);
 
-	// 2. Savings by service
-	children.push(heading("2. Savings by Service"));
-	const svcRows: TableRow[] = [row(["AWS Service", "Findings", "Est. Monthly Savings (USD)"], true)];
-	for (const svc of services) {
+	// ── 2. Savings by service ─────────────────────────────────────────
+	children.push(heading("2. Potential Monthly Savings by Service"));
+	const svcRows: TableRow[] = [headRow(["AWS Service", "Findings", "Est. Savings / Month (USD)"])];
+	if (services.length === 0) svcRows.push(row(["No measurable savings identified", "—", "—"]));
+	services.forEach((svc, idx) => {
 		const items = actionable.filter((f) => f.service === svc);
 		const sum = items.reduce((s, f) => s + Number(f.est_monthly_saving_usd || 0), 0);
-		svcRows.push(row([svc, String(items.length), `$${money(sum)}`]));
+		const opts: CellOpts = idx % 2 === 1 ? { fill: ZEBRA } : {};
+		svcRows.push(
+			new TableRow({
+				children: [
+					cell(svc, { ...opts, bold: true }),
+					cell(String(items.length), { ...opts }),
+					cell(`$${money(sum)}`, { ...opts, bold: true, color: GREEN }),
+				],
+			}),
+		);
+	});
+	if (services.length > 0) {
+		svcRows.push(
+			new TableRow({
+				children: [cell("TOTAL", { bold: true, color: WHITE, fill: DARK }), cell(String(actionable.length), { bold: true, color: WHITE, fill: DARK }), cell(`$${money(totalMonthly)}`, { bold: true, color: WHITE, fill: DARK })],
+			}),
+		);
 	}
-	if (services.length > 0) svcRows.push(row(["TOTAL", String(actionable.length), `$${money(totalMonthly)}`], true));
-	else svcRows.push(row(["(no measurable savings)", "—", "—"]));
 	children.push(new Table({ style: "TableGrid", rows: svcRows }));
 
-	// 3. Findings — one table per service
-	children.push(heading("3. Detailed Findings by Service"));
-	let seq = 1;
-	if (services.length === 0) {
-		children.push(para("No findings with measurable savings — well optimized."));
+	// ── 3. Findings per service ───────────────────────────────────────
+	children.push(heading("3. Findings and Recommended Actions, by Service"));
+	if (services.length > 0) {
+		children.push(
+			new Paragraph({
+				spacing: { after: 120 },
+				children: [run("Findings are ordered by monthly saving within each service. “—” means the current cost was not measurable in this cost window.", false, SLATE)],
+			}),
+		);
 	}
-	for (const svc of services) {
+	let seq = 1;
+	services.forEach((svc, svcIdx) => {
 		const items = actionable.filter((f) => f.service === svc);
 		const sum = items.reduce((s, f) => s + Number(f.est_monthly_saving_usd || 0), 0);
-		children.push(
-			heading(`3.${services.indexOf(svc) + 1} ${svc} — $${money(sum)}/mo est. savings (${items.length} findings)`, HeadingLevel.HEADING_3),
-		);
-		const rows: TableRow[] = [
-			row(["#", "Resource", "Category", "Current /mo", "Est. saving /mo", "Detail → Recommendation", "Est. effort"], true),
-		];
-		for (const f of items) {
+		children.push(heading(`3.${svcIdx + 1}  ${svc} — $${money(sum)} per month across ${items.length} finding${items.length === 1 ? "" : "s"}`, HeadingLevel.HEADING_3));
+		const rows: TableRow[] = [headRow(["#", "Resource", "Finding", "Current /mo", "Est. saving /mo", "Recommended action", "Effort"])];
+		items.forEach((f, idx) => {
+			const fill = idx % 2 === 1 ? ZEBRA : undefined;
 			rows.push(
-				row([
-					String(seq++),
-					f.resource,
-					f.category,
-					currentCostMo(f) !== null ? `$${money(currentCostMo(f) as number)}` : "—",
-					`$${pyNum(f.est_monthly_saving_usd)}`,
-					f.detail + DETAIL_REC_SEPARATOR + f.recommendation,
-					`${effortHours(f).hours}h`,
-				]),
+				new TableRow({
+					children: [
+						cell(String(seq++), { fill, color: SLATE }),
+						cell(f.resource, { fill, bold: true }),
+						cell(f.category, { fill }),
+						cell(currentCostMo(f) !== null ? `$${money(currentCostMo(f) as number)}` : "—", { fill, color: SLATE }),
+						cell(`$${pyNum(f.est_monthly_saving_usd)}`, { fill, bold: true, color: GREEN }),
+						cell(f.recommendation, { fill }),
+						cell(`${effortHours(f).hours} h`, { fill, color: SLATE }),
+					],
+				}),
 			);
-		}
+			rows.push(
+				new TableRow({
+					children: [
+						cell("", { fill }),
+						new TableCell({
+							columnSpan: 6,
+							shading: fill ? { type: ShadingType.CLEAR, color: "auto", fill } : undefined,
+							children: [new Paragraph({ children: [run(`Detail: ${f.detail}`, false, SLATE)] })],
+						}),
+					],
+				}),
+			);
+		});
 		children.push(new Table({ style: "TableGrid", rows }));
-	}
+		children.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
+	});
 
-	// 4. Review-only items
+	// ── 4. Review-only items ──────────────────────────────────────────
 	if (review.length > 0) {
-		children.push(heading("4. Items for Review (no measured saving)"));
+		children.push(heading("4. Additional Items Requiring Review (No Measured Saving)"));
+		children.push(
+			new Paragraph({
+				spacing: { after: 120 },
+				children: [run("These resources show waste signals but no measurable dollar saving in this cost window — confirm with the owning team before acting.", false, SLATE)],
+			}),
+		);
 		for (const f of review) {
-			children.push(para(`• ${f.resource} (${f.service} · ${f.category}): ${f.recommendation}`));
+			children.push(new Paragraph({ children: [run(`•  ${f.resource}`, true), run(`  (${f.service} · ${f.category}) — ${f.recommendation}`, false, SLATE)] }));
 		}
 	}
 
-	// 5. Prioritized plan
-	children.push(heading(`${review.length > 0 ? 5 : 4}. Prioritized Savings Plan`));
-	for (const line of PRIORITIZED_PLAN) children.push(para(line));
+	// ── 5. Action plan ────────────────────────────────────────────────
+	children.push(heading(`${review.length > 0 ? 5 : 4}. Recommended Action Plan`));
 	children.push(
-		para(
-			"No additional licensing or third-party spend is required for the recommended actions (config / rightsize / delete tasks only).",
-		),
+		new Paragraph({
+			spacing: { after: 120 },
+			children: [run("Work top-to-bottom: the highest monthly savings are listed first and typically require the least effort.", false, SLATE)],
+		}),
+	);
+	for (const line of PRIORITIZED_PLAN) children.push(new Paragraph({ text: `•  ${line}` }));
+	children.push(
+		new Paragraph({
+			spacing: { before: 120 },
+			children: [run("None of the recommended actions require new licences or third-party spend — they are configuration, right-sizing and removal tasks performed inside your AWS account.", false, SLATE)],
+		}),
+	);
+
+	children.push(
+		new Paragraph({
+			spacing: { before: 240 },
+			children: [run(`Effort figures are rough planning estimates for a mid-level engineer at ${DEFAULT_RATE}/hour; they are not quotations. Savings figures derive from the measured usage signals shown; treat them as targets, not guarantees.`, false, SLATE)],
+		}),
 	);
 
 	const doc = new Document({ sections: [{ properties: {}, children }] });
 	return Packer.toArrayBuffer(doc);
+}
+
+/** Zebra row helper keeps types clean for two-cell tables. */
+function zebra(cells: [TableCell, TableCell]): TableRow {
+	return new TableRow({ children: cells });
 }
