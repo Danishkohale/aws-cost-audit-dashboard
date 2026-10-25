@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Finding } from "../lib/api";
-import { currentCostMo, effortHours, fmt$, type Metrics } from "../lib/metrics";
+import { currentCostMo, fmt$, type Metrics } from "../lib/metrics";
+import { remediationSteps } from "../lib/remediation";
 
 /** Compact meta detail line — backend-tracked attributes only. */
 function metaLine(f: Finding): string {
@@ -25,7 +26,7 @@ function metaLine(f: Finding): string {
 function FindingRow({ f, seq }: { f: Finding; seq: number }) {
 	const [open, setOpen] = useState(false);
 	const cost = currentCostMo(f);
-	const { hours } = effortHours(f);
+	const steps = remediationSteps(f);
 
 	return (
 		<div className="frow">
@@ -34,7 +35,6 @@ function FindingRow({ f, seq }: { f: Finding; seq: number }) {
 				<span className="fsvc">{f.service}</span>
 				<span className="fres" title={f.resource}>{f.resource}</span>
 				<span className="fcost">{cost !== null ? `${fmt$(cost)}/mo` : <em className="dim">n/a</em>}</span>
-				<span className="fsteps">≈{hours}h</span>
 				<span className="fsave">{fmt$(f.est_monthly_saving_usd)}/mo</span>
 			</button>
 			{open && (
@@ -45,10 +45,15 @@ function FindingRow({ f, seq }: { f: Finding; seq: number }) {
 						<div><label>Tracking</label><p>{f.category}</p></div>
 						<div><label>Current cost</label><p>{cost !== null ? `${fmt$(cost)}/mo` : "not in this window"}</p></div>
 						<div><label>Est. savings</label><p className="green">{fmt$(f.est_monthly_saving_usd)}/mo · {fmt$(Number(f.est_monthly_saving_usd) * 12)}/yr</p></div>
-						<div><label>Est. effort</label><p>≈{hours}h · ≤ {fmt$(hours * 75)} labour est. at $75/h</p></div>
 					</div>
 					{metaLine(f) && <p className="dmeta">{metaLine(f)}</p>}
 					<p className="ddetail"><b>Detail</b> {f.detail}</p>
+					<label className="dlabel">How to save it</label>
+					<ol className="howto">
+						{steps.map((s, i) => (
+							<li key={i}>{s}</li>
+						))}
+					</ol>
 					<p className="drec"><b>Do this</b> {f.recommendation}</p>
 					<p className="fnum dim">Finding #{seq}</p>
 				</div>
@@ -90,7 +95,7 @@ export function FindingsSection({ m, total }: { m: Metrics; total: number }) {
 			</div>
 
 			<div className="fcol head">
-				<span /><span>Service</span><span>Resource</span><span className="num">Current/mo</span><span className="num">Effort</span><span className="num">Est. saving/mo</span>
+				<span /><span>Service</span><span>Resource</span><span className="num">Current/mo</span><span className="num">Est. saving/mo</span>
 			</div>
 
 			<div className="flist">

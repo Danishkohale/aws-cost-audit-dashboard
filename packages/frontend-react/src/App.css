@@ -78,7 +78,7 @@
 .tools .cnt { color: var(--dim); font-size: .72rem; }
 
 .fcol.head {
-  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 4rem 7.5rem;
+  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 7.5rem;
   gap: .6rem; padding: .35rem .6rem; color: var(--dim);
   font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
   border-bottom: 1px solid var(--line);
@@ -89,7 +89,7 @@
 .frow { border-bottom: 1px solid var(--line); }
 .frow:hover { background: var(--card); }
 .frow-head {
-  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 4rem 7.5rem;
+  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 7.5rem;
   gap: .6rem; align-items: center; width: 100%;
   background: none; border: none; color: var(--fg); font: inherit; text-align: left;
   padding: .55rem .6rem; cursor: pointer;
@@ -99,7 +99,6 @@
 .fres { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fcost { font-size: .78rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
 .fcost i { font-size: .68rem; }
-.fsteps { font-size: .72rem; color: var(--dim); text-align: right; }
 .fsave { color: var(--acc); font-weight: 700; font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; }
 
 .frow-detail { padding: .7rem .9rem .9rem 1.8rem; background: var(--card); }
@@ -107,6 +106,15 @@
 .dgrid label { display: block; color: var(--dim); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .1rem; }
 .dgrid p { margin: 0; font-size: .78rem; }
 .dmeta, .ddetail, .drec { font-size: .75rem; color: var(--dim); margin: .55rem 0 0; }
+.dlabel {
+  display: block; color: var(--acc); font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; margin: .8rem 0 .3rem;
+}
+.howto {
+  margin: .2rem 0 .2rem 1.1rem; padding: 0;
+  font-size: .76rem; color: var(--fg); display: flex; flex-direction: column; gap: .3rem;
+}
+.howto li::marker { color: var(--acc); font-weight: 700; }
 .ddetail b, .drec b, .dgrid label { color: var(--dim); }
 .drec { color: var(--fg); }
 .fnum { font-size: .62rem; }
@@ -190,6 +198,4 @@ input::placeholder { color: var(--dim); }
   .srow { grid-template-columns: 6.5rem 1fr 6.5rem; }
   .scnt { display: none; }
   .fcol.head, .frow-head { grid-template-columns: 1.1rem 5rem minmax(6rem, 1fr) 6rem 6.5rem; }
-  .fsteps { display: none; }
-  .fcol.head span:nth-child(4) { display: none; }
 }
