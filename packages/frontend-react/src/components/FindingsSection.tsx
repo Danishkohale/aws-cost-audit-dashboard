@@ -79,11 +79,10 @@ function EnginePlan({
 			)}
 
 			<p className="dwhy"><b>Why this is best</b> {rec.why_selected}</p>
-			<p className="drec"><b>Do this</b> {rec.change}</p>
 			<div className="ai-note">
 				<span className="ai-badge">AI suggestions</span>
 				{busy && <span>Checking the rule output…</span>}
-				{!busy && narrative && <span>LLM ({narrative.model}) — verified against the rule engine</span>}
+				{!busy && narrative && <span>LLM summary ({narrative.model}) · action and figures from the rule engine</span>}
 				{!busy && !narrative && err && (
 					<>
 						<span className="errmsg">AI unavailable: {err}</span>
@@ -93,11 +92,26 @@ function EnginePlan({
 				{!busy && !narrative && !err && !hasJob && <span>Needs an audit job.</span>}
 			</div>
 			{narrative && <p className="ai-summary">{narrativeText(narrative)}</p>}
-			<div className="costline">
-				<span><b>Cost</b> {rec.current_cost_mo !== null ? `${fmt$(rec.current_cost_mo)}/mo` : "not in window"} → {rec.projected_cost_mo !== null ? `${fmt$(rec.projected_cost_mo)}/mo after the change` : "projected not computable"}</span>
-				{rec.saving_mo !== null && <span className="green"><b>Net saving</b> {fmt$(rec.saving_mo)}/mo · {fmt$(rec.saving_an ?? rec.saving_mo * 12)}/yr</span>}
+			<div className="ai-facts">
+				<div>
+					<label>Action</label>
+					<p>{rec.change}</p>
+				</div>
+				<div>
+					<label>Cost</label>
+					<p>
+						{rec.current_cost_mo !== null ? `${fmt$(rec.current_cost_mo)}/mo` : "not in window"} →{" "}
+						{rec.projected_cost_mo !== null ? `${fmt$(rec.projected_cost_mo)}/mo` : "not computable"}
+						{rec.saving_mo !== null && (
+							<> · saves <b className="green">{fmt$(rec.saving_mo)}/mo</b> ({fmt$(rec.saving_an ?? rec.saving_mo * 12)}/yr)</>
+						)}
+					</p>
+				</div>
+				<div>
+					<label>Calculation</label>
+					<p>{rec.calc_method}</p>
+				</div>
 			</div>
-			<p className="dcalc"><b>Calculation</b> {rec.calc_method}</p>
 			{rec.estimate_note && <p className="dcalc dim">{rec.estimate_note}</p>}
 
 			<label className="dlabel">Risks</label>
