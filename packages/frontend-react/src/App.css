@@ -77,9 +77,12 @@
 .tools .search { flex: 1; min-width: 11rem; }
 .tools .cnt { color: var(--dim); font-size: .72rem; }
 
+.fcol.head, .frow-head {
+  display: grid; grid-template-columns: 1.25rem 5.5rem minmax(8rem, 1fr) 7rem 7.5rem;
+  gap: .6rem; align-items: center; box-sizing: border-box; width: 100%;
+}
 .fcol.head {
-  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 7.5rem;
-  gap: .6rem; padding: .35rem .6rem; color: var(--dim);
+  padding: .35rem .6rem; color: var(--dim);
   font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
   border-bottom: 1px solid var(--line);
 }
@@ -89,20 +92,18 @@
 .frow { border-bottom: 1px solid var(--line); }
 .frow:hover { background: var(--card); }
 .frow-head {
-  display: grid; grid-template-columns: 1.2rem 5rem minmax(10rem, 1fr) 7rem 7.5rem;
-  gap: .6rem; align-items: center; width: 100%;
   background: none; border: none; color: var(--fg); font: inherit; text-align: left;
   padding: .55rem .6rem; cursor: pointer;
 }
-.chk { color: var(--dim); font-size: .7rem; }
-.fsvc { color: var(--acc); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.chk { color: var(--dim); font-size: .7rem; text-align: left; }
+.fsvc { color: var(--acc); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fres { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fcost { font-size: .78rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
 .fcost i { font-size: .68rem; }
 .fsave { color: var(--acc); font-weight: 700; font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; }
 
-.frow-detail { padding: .7rem .9rem .9rem 1.8rem; background: var(--card); }
-.dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .6rem; }
+.frow-detail { padding: .8rem 1rem 1rem 2.5rem; background: var(--card); }
+.dgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem .9rem; align-items: start; }
 .dgrid label { display: block; color: var(--dim); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .1rem; }
 .dgrid p { margin: 0; font-size: .78rem; }
 .dmeta, .ddetail, .drec { font-size: .75rem; color: var(--dim); margin: .55rem 0 0; }
@@ -120,7 +121,7 @@
 .engine {
   border-left: 2px solid var(--acc); margin: .7rem 0 0; padding: .1rem 0 .1rem .7rem;
 }
-.engine .dgrid { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.engine .dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .conf {
   display: inline-block; padding: .1rem .45rem; border-radius: .8rem;
   font-size: .66rem; font-weight: 700; letter-spacing: .03em; margin-right: .3rem;
@@ -150,7 +151,8 @@
 .ai-btn { font-size: .72rem; padding: .3rem .7rem; }
 .ai-note { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: var(--dim); font-size: .68rem; }
 .ai-badge { color: var(--acc); border: 1px solid rgba(74,222,128,.35); background: rgba(74,222,128,.12); border-radius: 999px; padding: .05rem .45rem; font-size: .6rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
-.narrative { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; margin-top: .5rem; }
+.ai-retry { font-size: .68rem; padding: .1rem .5rem; }
+.narrative { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem .9rem; margin-top: .5rem; align-items: start; }
 .narrative label { display: block; color: var(--dim); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .12rem; }
 .narrative p { margin: 0; font-size: .75rem; }
 .fnum { font-size: .62rem; }
@@ -233,5 +235,10 @@ input::placeholder { color: var(--dim); }
   .main-in { padding: 1.2rem 1rem 3rem; }
   .srow { grid-template-columns: 6.5rem 1fr 6.5rem; }
   .scnt { display: none; }
-  .fcol.head, .frow-head { grid-template-columns: 1.1rem 5rem minmax(6rem, 1fr) 6rem 6.5rem; }
+  .fcol.head, .frow-head { grid-template-columns: 1.1rem 4.5rem minmax(5rem, 1fr) 6rem 6.5rem; }
+  .frow-detail { padding-left: 1.2rem; }
+  .dgrid, .engine .dgrid, .narrative { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 34rem) {
+  .dgrid, .engine .dgrid, .narrative { grid-template-columns: 1fr; }
 }

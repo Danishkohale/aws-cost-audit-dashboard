@@ -51,7 +51,7 @@ const CONF_W = { high: 1, medium: 0.6, low: 0.35 } as const;
 const RISK_W = { low: 1, medium: 0.85, high: 0.7 } as const;
 
 const TRACKING =
-	"After applying the change, re-run this audit: this finding should disappear from the waste list and the dashboard's Actual-vs-Estimated panel will compare the measured saving against the estimate above.";
+	"Verify: re-run the audit after the change and compare actual vs estimated.";
 
 const NAT_HOURLY = 0.045; // $/hr per NAT gateway
 const EIP_HOURLY = 0.005; // $/hr per idle EIP
@@ -322,13 +322,13 @@ function finish(rec: RecDetail, f: Finding, risk: "low" | "medium" | "high", con
 	if (!rec.calc_method) {
 		rec.calc_method =
 			cur !== null && rec.projected_cost_mo !== null
-				? `Measured current ${usd(cur)}/mo − projected ${usd(rec.projected_cost_mo)}/mo after the change ⇒ ${usd(rec.saving_mo)}/mo`
+				? `${usd(cur)}/mo − ${usd(rec.projected_cost_mo)}/mo = ${usd(rec.saving_mo)}/mo`
 				: headline > 0
-					? `Scan rule-of-thumb: ${usd(headline)}/mo (headline figure; option arithmetic above is more specific)`
-					: "No measured dollar saving in this window — review item only";
+					? `Scan rule-of-thumb: ${usd(headline)}/mo`
+					: "No measured saving in this window — review only";
 	}
 	if (!rec.estimate_note && rec.saving_mo !== null && headline > 0 && Math.abs(rec.saving_mo - headline) > 0.015) {
-		rec.estimate_note = `Headline estimate (rule-of-thumb used in the totals): ${usd(headline)}/mo. The chosen option's specific arithmetic gives ${usd(rec.saving_mo)}/mo — the totals keep the more conservative figure.`;
+		rec.estimate_note = `Headline rule-of-thumb ${usd(headline)}/mo vs option arithmetic ${usd(rec.saving_mo)}/mo — totals keep the lower figure.`;
 	}
 	rec.confidence_basis = confBasis;
 	rec.priority_score = round2(((rec.saving_mo ?? 0) ?? 0) * CONF_W[rec.confidence] * RISK_W[risk]);
@@ -351,64 +351,65 @@ function ec2DownsizeRec(f: Finding, cur: number | null): RecDetail {
 	const sched = cur !== null ? round2(cur * 0.58) : null; // 12h/weekday + all weekend ≈ 58% of compute hours
 
 	rec.issue =
-		`Running far below provisioned capacity: billed ${usd(cur)}/mo for a workload averaging ${String(m.cpu_avg ?? "?")}% CPU (max ${String(m.cpu_max ?? "?")}%).`;
+		`${itype}: CPU avg ${String(m.cpu_avg ?? "?")}% / max ${String(m.cpu_max ?? "?")}% — billed ${usd(cur)}/mo.`;
 	rec.options = [];
 	if (d1) rec.options.push({
 		title: "Downsize one step",
 		change: `${itype} → ${d1.type}`,
 		saving_mo: p1 !== null && cur !== null ? round2(Math.max(0, cur - p1)) : null,
-		trade_off: "One reboot (~2 min); keeps same-family headroom for bursts.",
+		trade_off: "Reboot ~2 min; same family.",
 	});
 	if (d3) rec.options.push({
 		title: "Downsize three steps",
 		change: `${itype} → ${d3.type}`,
 		saving_mo: p3 !== null && cur !== null ? round2(Math.max(0, cur - p3)) : null,
-		trade_off: "Deeper cut — only safe while peak CPU p95 < 50% of the smaller size.",
+		trade_off: "Needs p95 CPU below 50% of smaller size.",
 	});
 	if (sched !== null) rec.options.push({
 		title: "Off-hours stop schedule",
 		change: "Auto-stop 12h per weekday + all weekend (Instance Scheduler / EventBridge+Lambda on a stop-schedule tag)",
 		saving_mo: sched,
-		trade_off: "No downtime in business hours; anything scheduled outside hours must be re-pointed.",
+		trade_off: "No business-hours downtime; re-point off-hours jobs.",
 	});
 	pickBest(rec, cur);
 	rec.why_selected =
 		rec.options[rec.selected] !== undefined
-			? `${rec.options[rec.selected].title} yields the largest measured saving (${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo) for this resource's observed CPU profile (avg ${m.cpu_avg ?? "?"}%, max ${m.cpu_max ?? "?"}%).`
+			? `Best saving: ${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo (CPU avg ${m.cpu_avg ?? "?"}%).`
 			: "";
 	rec.confidence = m.cpu_avg != null ? "medium" : "low";
+	const burstable = /^(t2|t3|t4g)\./.test(itype);
 	rec.risks = [
-		"CPU metrics say nothing about memory — install CloudWatch Agent before deep downsizing.",
-		"Burstable families (t2/t3) can exhaust CPU credits after a cut; watch CPUCreditBalance for a week.",
-		"A reboot is required: pick the app's quietest hour.",
+		"Memory not measured — check CloudWatch Agent before deep cuts.",
+		...(burstable ? ["Burstable CPU credits can run out — watch CPUCreditBalance."] : []),
+		"Reboot required: pick a low-traffic window.",
 	];
-	if (m.cpu_avg == null) rec.data_gaps.push("CPU metrics unavailable for this window — every option assumes the workload stays as quiet as the (missing) evidence suggests.");
-	if (d1 && EC2_PRICE_MO[d1.type] === undefined) rec.data_gaps.push(`Exact list price for ${d1.type} is absent from the local price table — projected cost uses the family's linear ×0.5-per-step pricing (${usd(cur !== null ? cur / d1.divisor : null)}/mo); confirm on the AWS pricing page.`);
-	return finish(rec, f, "medium", `CPU avg ${m.cpu_avg ?? "?"}% / max ${m.cpu_max ?? "?"}% measured from CloudWatch over the lookback window.`);
+	if (m.cpu_avg == null) rec.data_gaps.push("No CPU metrics this window — options assume quiet usage.");
+	if (d1 && EC2_PRICE_MO[d1.type] === undefined) rec.data_gaps.push(`${d1.type} list price not in local table — projected cost uses ×0.5-per-step pricing (${usd(cur !== null ? cur / d1.divisor : null)}/mo).`);
+	return finish(rec, f, "medium", `CPU avg ${m.cpu_avg ?? "?"}% / max ${m.cpu_max ?? "?"}% from CloudWatch.`);
 }
 
 function ec2StoppedRec(f: Finding, cur: number | null): RecDetail {
 	const m = f.meta ?? {};
 	const rec = baseRec(f, cur);
-	rec.issue = "Stopped instance: still billed for attached EBS storage (and reserved for 0 compute output) since it stopped.";
+	rec.issue = "Stopped instance — still billed for attached EBS and reserved capacity.";
 	rec.options = [
 		{
 			title: "Terminate + snapshot volumes",
 			change: "Create final AMI if rollback matters → terminate instance → DLM 30–90d retention for the leftover volumes' snapshots",
 			saving_mo: cur ?? round2(num(m.instance_type ? ec2PriceOf(String(m.instance_type)) : null) ?? 0),
-			trade_off: "Full full compute stop; snapshot retention keeps a cheap restore path (~$0.05/GB/mo).",
+			trade_off: "Full stop; snapshot keeps a cheap restore path.",
 		},
 		{
 			title: "Delete volumes, keep instance stopped",
 			change: "Snapshot each attached volume now, then delete the volumes immediately",
 			saving_mo: null,
-			trade_off: "Stops the storage bleed instantly if the instance may still be restarted later.",
+			trade_off: "Stops storage billing; instance can still be restarted.",
 		},
 		{
 			title: "Start + right-size",
 			change: "Start it and downsize one step (see the running-instance plan above) if the workload still exists",
 			saving_mo: null,
-			trade_off: "Only better if the workload is genuinely alive; verify with the owner first.",
+			trade_off: "Only if the workload is genuinely alive.",
 		},
 	];
 	rec.selected = 0;
@@ -416,16 +417,16 @@ function ec2StoppedRec(f: Finding, cur: number | null): RecDetail {
 	rec.saving_mo = rec.options[0].saving_mo;
 	rec.projected_cost_mo = 0;
 	rec.why_selected = cur !== null
-		? `Terminating removes the full ${usd(cur)}/mo with no downside once the owner confirms no reuse; snapshots cover rollback at a fraction of the price.`
-		: "Terminating removes the whole waste once confirmed; snapshots cover rollback cheaply.";
+		? `Stops the full ${usd(cur)}/mo; snapshots keep a rollback path.`
+		: "Stops the waste; snapshots keep a rollback path.";
 	rec.confidence = cur !== null ? "high" : "low";
 	rec.risks = [
-		"Volume data is unrecoverable after deletion without a snapshot — always snapshot first.",
-		"The instance may be a staging/DR box someone parked deliberately; get owner confirmation.",
+		"Data is unrecoverable without a snapshot — snapshot first.",
+		"May be a parked staging/DR box — confirm with owner.",
 	];
-	if (cur === null) rec.data_gaps.push("The audit window does not show this instance's EBS cost — the real waste is higher than shown.");
-	else rec.data_gaps.push("Per-volume EBS cost is not broken out here; the snapshot-retention charge (~$0.05/GB/mo) is NOT subtracted from the saving figure.");
-	return finish(rec, f, "medium", `State '${m.state ?? "stopped"}' confirmed in describe; ${m.instance_type ?? "?"} priced from the table at ${usd(cur)}/mo.`);
+	if (cur === null) rec.data_gaps.push("EBS cost not in this window — real waste is higher.");
+	else rec.data_gaps.push("Snapshot retention (~$0.05/GB/mo) is not subtracted from the saving.");
+	return finish(rec, f, "medium", `State '${m.state ?? "stopped"}'; ${m.instance_type ?? "?"} priced at ${usd(cur)}/mo.`);
 }
 
 /** Previous-gen → current-gen same-size migration (m4→m5, c4→c5, r4→r5, t2→t3). */
@@ -442,36 +443,36 @@ function ec2OldGenRec(f: Finding, cur: number | null): RecDetail {
 	const dz = stepDown(itype, 1);
 	const pSameOneDown = dz && newFamily ? ec2PriceOf(`${newFamily}.${dz.type.slice(dz.type.indexOf(".") + 1)}`) : null;
 
-	rec.issue = `Previous-generation ${itype} — current-generation equivalents cost 10–20% less for equal or better performance.`;
+	rec.issue = `Previous-gen ${itype} — current-gen is 10–20% cheaper at equal performance.`;
 	rec.options = [];
 	if (sameSize) rec.options.push({
 		title: `Same-size migration ${curFamily} → ${newFamily}`,
 		change: `${itype} → ${sameSize} (maintenance-window replacement, ENI/EIP swap)`,
 		saving_mo: pSame !== null && cur !== null ? round2(Math.max(0, cur - pSame)) : null,
-		trade_off: "Instance replacement, not a hot resize — schedule a short window.",
+		trade_off: "Short replacement window.",
 	});
 	if (dz && newFamily) rec.options.push({
 		title: "Migrate + downsize one step",
 		change: `${itype} → ${newFamily}.${dz.type.slice(dz.type.indexOf(".") + 1)} (one generation newer AND one size smaller)`,
 		saving_mo: pSameOneDown !== null && cur !== null ? round2(Math.max(0, cur - pSameOneDown)) : null,
-		trade_off: "Largest saving; needs the same CPU-peak evidence as any downsize.",
+		trade_off: "Largest saving; needs CPU-peak headroom.",
 	});
 	if (rec.options.length > 0) rec.options.push({
 		title: "Migrate to Graviton",
 		change: newFamily ? `${itype} → ${newFamily.toLowerCase().replace(/[^a-z0-9]/g, "") === "m5" ? "m7g" : "c7g"}.${newSize} (ARM)` : `${itype} → Graviton current-gen`,
 		saving_mo: pSame !== null && cur !== null ? round2(Math.max(0, cur - pSame) * 1.15) : null,
-		trade_off: "~15% cheaper again — but the binary/arch must support ARM; bigger validation scope.",
+		trade_off: "~15% more, but needs arm64 images.",
 	});
 	pickBest(rec, cur);
 	rec.why_selected = rec.options[rec.selected] !== undefined
-		? `${rec.options[rec.selected].title} captures the best measured saving (${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo); generation migration is a one-off reversible change regardless.`
+		? `Best saving: ${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo.`
 		: "";
 	rec.confidence = pSame !== null && cur !== null ? "medium" : "low";
 	rec.risks = [
-		"ARM (Graviton) options need amd64→arm64 image rebuilds and dependency checks — pick them only when that pipeline exists.",
+		"Graviton needs amd64→arm64 rebuilds — only if that pipeline exists.",
 	];
-	if (pSame === null && cur !== null) rec.data_gaps.push(`Price for ${sameSize ?? "the current-gen equivalent"} is not in the local table — the saving uses the 10–20% band from the scan's rule-of-thumb instead.`);
-	return finish(rec, f, "medium", `Generation price band from the price table comparisons; measured CPU ${m.cpu_avg ?? "?"}% confirms headroom.`);
+	if (pSame === null && cur !== null) rec.data_gaps.push(`${sameSize ?? "Current-gen"} price not in local table — uses the 10–20% scan band.`);
+	return finish(rec, f, "medium", `Price-table comparison; CPU ${m.cpu_avg ?? "?"}% confirms headroom.`);
 }
 
 // ── EBS / EC2-Other handlers ────────────────────────────────────────────────
@@ -482,7 +483,7 @@ function ebsUnattachedRec(f: Finding, cur: number | null): RecDetail {
 	const size = num(m.size_gb);
 	const rate = EBS_GB_MO[String(m.type ?? "")] ?? EBS_GB_MO["gp2"] ?? 0.1;
 	const snapMo = size !== null ? round2(size * SNAP_GB_MO) : null;
-	rec.issue = "Volume is detached ('available') — billed at full storage rate while serving nothing.";
+	rec.issue = "Volume detached ('available') — billed at full rate, serving nothing.";
 	rec.options = [
 		{
 			title: "Snapshot then delete",
@@ -490,29 +491,29 @@ function ebsUnattachedRec(f: Finding, cur: number | null): RecDetail {
 				? `Snapshot ${size}GB (~${usd(snapMo)}/mo retention) → delete volume after a 7–30d recovery window`
 				: "Snapshot then delete the volume after a recovery window",
 			saving_mo: cur !== null && snapMo !== null ? round2(Math.max(0, cur - snapMo)) : cur,
-			trade_off: "Keeps a cheap recovery path; ~90% of the bill goes away today.",
+			trade_off: "Cheap rollback path; ~90% of the bill gone.",
 		},
 		{
 			title: "Delete outright",
 			change: "Delete the volume now (no snapshot)",
 			saving_mo: cur,
-			trade_off: "Maximum saving; irreversible if the data mattered.",
+			trade_off: "Maximum saving; irreversible.",
 		},
 	];
 	pickBest(rec, cur);
 	rec.change = rec.options[rec.selected].change;
 	rec.projected_cost_mo = rec.selected === 0 ? snapMo : 0;
-	rec.why_selected = "Snapshot-then-delete removes ~" + usd(rec.options[0].saving_mo) + "/mo while keeping a rollback path; pure deletion is available if the owner confirms zero value.";
+	rec.why_selected = "Best saving: " + usd(rec.options[0].saving_mo) + "/mo; snapshot keeps a rollback path.";
 	rec.confidence = cur !== null ? "high" : "medium";
 	rec.calc_method = size !== null && cur !== null
-		? `Cost is directly computed: ${size}GB × $${rate}/GB-mo = ${usd(cur)}/mo; after the change only the snapshot remains (${usd(snapMo)}/mo)`
-		: "Snapshot rate $0.05/GB-mo vs volume rate";
+		? `${size}GB × $${rate}/GB-mo = ${usd(cur)}/mo → ${usd(snapMo)}/mo for the snapshot`
+		: "Snapshot $0.05/GB-mo vs volume rate";
 	rec.risks = [
 		"Deleting without a snapshot loses the data permanently.",
-		"Some automation re-attaches EBS volumes by ID — check CloudTrail for recent attach activity before deleting.",
+		"Automation may re-attach by volume ID — check CloudTrail.",
 	];
-	if (cur === null) rec.data_gaps.push("No per-GB cost computed for this volume type in this window — cost figure missing.");
-	return finish(rec, f, "medium", `State '${m.state ?? "available"}' confirmed in describe; rate ${rate} $/GB-mo from the price table.`);
+	if (cur === null) rec.data_gaps.push("No per-GB cost for this volume type in this window.");
+	return finish(rec, f, "medium", `State '${m.state ?? "available"}'; $${rate}/GB-mo from the price table.`);
 }
 
 function ebsLowIoRec(f: Finding, cur: number | null): RecDetail {
@@ -521,7 +522,7 @@ function ebsLowIoRec(f: Finding, cur: number | null): RecDetail {
 	const type = String(m.type ?? "gp3");
 	const size = num(m.size_gb);
 	const attached = m.attached_to ? String(m.attached_to) : "";
-	rec.issue = `Volume is attached${attached ? ` to ${attached}` : ""} but reads/writes almost nothing — paying ${type} price for idle storage.`;
+	rec.issue = `${type} volume${attached ? ` on ${attached}` : ""} — near-zero I/O, still billed.`;
 	rec.options = [
 		{
 			title: type === "gp2" ? "Modify gp2 → gp3" : "Shrink to gp3 at measured need",
@@ -529,26 +530,26 @@ function ebsLowIoRec(f: Finding, cur: number | null): RecDetail {
 				? `Re-provision to gp3 sized from p99 IOPS (3,000 IOPS / 125 MB/s baseline is free)`
 				: "Re-provision to gp3 sized from p99 IOPS",
 			saving_mo: cur !== null ? round2(cur * 0.5) : null,
-			trade_off: "Keeps it attached; snapshot first if shrinking below the data footprint.",
+			trade_off: "Stays attached; snapshot before shrinking.",
 		},
 		{
 			title: "Archive cold data",
 			change: "Snapshot → copy cold blocks to S3 Glacier → delete or shrink the volume",
 			saving_mo: null,
-			trade_off: "Only wins if the data is truly cold; retrieval takes minutes and adds per-GB fees.",
+			trade_off: "Only if data is truly cold; retrieval adds fees.",
 		},
 	];
 	pickBest(rec, cur);
 	rec.change = rec.options[rec.selected].change;
 	rec.projected_cost_mo = cur !== null ? round2(cur / 2) : null;
-	rec.why_selected = "Measured I/O is near zero; the cheapest safe move keeps the volume attached at a size that matches measured demand.";
+	rec.why_selected = "I/O near zero; cheapest safe match to measured demand.";
 	rec.confidence = cur !== null ? "medium" : "low";
 	rec.risks = [
-		"A quiet fortnight can hide a spiky monthly job — widen the metric window before shrinking.",
+		"A quiet fortnight can hide a monthly job — widen the window.",
 	];
-	if (attached) rec.data_gaps.push(`Host instance ${attached} may itself be idle (see its own finding) — terminating that instance first is the simplest path.`);
-	if (cur === null) rec.data_gaps.push("Per-GB rate for this volume type unknown in this window.");
-	return finish(rec, f, "medium", `Measured VolumeReadOps ${m.read_ops_14d ?? m.read_ops ?? "?"} / write ${m.write_ops_14d ?? m.write_ops ?? "?"} ops per window.`);
+	if (attached) rec.data_gaps.push(`Host ${attached} may itself be idle — check its own finding.`);
+	if (cur === null) rec.data_gaps.push("Per-GB rate for this type unknown.");
+	return finish(rec, f, "medium", `ReadOps ${m.read_ops_14d ?? m.read_ops ?? "?"} / WriteOps ${m.write_ops_14d ?? m.write_ops ?? "?"} per window.`);
 }
 
 function ebsGp2Rec(f: Finding, cur: number | null, rds: boolean): RecDetail {
@@ -561,59 +562,59 @@ function ebsGp2Rec(f: Finding, cur: number | null, rds: boolean): RecDetail {
 	const saving = proj !== null
 		? (cur !== null ? round2(Math.max(0, cur - proj)) : size !== null ? round2(size * (gp2rate - gp3rate)) : null)
 		: null;
-	rec.issue = `Legacy ${rds ? "RDS storage" : ""} gp2 volume${size !== null ? ` (${size}GB)` : ""}: gp3 is ~20-25% cheaper at the same or configurable performance, and the change is online (no downtime).`;
+	rec.issue = `gp2${rds ? " RDS" : ""} storage${size !== null ? ` ${size}GB` : ""} — gp3 is ~20-25% cheaper, online.`;
 	rec.options = [
 		{
 			title: "Modify gp2 → gp3",
 			change: size !== null ? `Change storage type to gp3 (${size}GB${rds ? " in the maintenance window" : ", online"})` : "Change storage type to gp3",
 			saving_mo: saving,
-			trade_off: rds ? "RDS switch lands in a maintenance window; storage autoscaling should be enabled at the same time." : "Online, no snapshot, no reboot.",
+			trade_off: rds ? "RDS: maintenance window." : "Online, no reboot.",
 		},
 		{
 			title: "gp3 + autoscaling",
 			change: "Switch to gp3 and enable storage autoscaling so future growth no longer over-provisions",
 			saving_mo: saving,
-			trade_off: "Same saving now, plus protection against future over-provisioning.",
+			trade_off: "Same saving; prevents future over-provisioning.",
 		},
 	];
 	rec.selected = 1;
 	rec.change = rec.options[1].change;
 	rec.projected_cost_mo = proj;
 	rec.saving_mo = rec.options[1].saving_mo;
-	rec.why_selected = "Identical saving to option 1 but with autoscaling it prevents the size drift that produced this finding; the change is low-risk either way.";
+	rec.why_selected = "Same saving as option 1; autoscaling prevents size drift.";
 	rec.confidence = "high";
 	rec.calc_method = size !== null && cur !== null
-		? `${size}GB × ($${money(gp2rate)} − $${money(gp3rate)})/GB-mo = ${usd(round2(size * (gp2rate - gp3rate)))}/mo (measured ${usd(cur)}/mo → ${usd(proj)}/mo)`
-		: `Published rate drop: $${money(gp2rate)} → $${money(gp3rate)} per GB-month (≈20%)`;
+		? `${size}GB × ($${money(gp2rate)} − $${money(gp3rate)})/GB-mo = ${usd(round2(size * (gp2rate - gp3rate)))}/mo (${usd(cur)} → ${usd(proj)}/mo)`
+		: `Rate drop $${money(gp2rate)} → $${money(gp3rate)}/GB-mo (≈20%)`;
 	rec.risks = [
-		rds ? "Verify gp3 allocated IOPS/throughput covers the DB's p99 load at switch time." : "gp3 baseline is 3,000 IOPS / 125 MB/s — re-provision if the volume used more.",
+		rds ? "gp3 IOPS/throughput must cover the DB's p99 load." : "gp3 baseline 3,000 IOPS / 125 MB/s — re-provision if exceeded.",
 	];
 	rec.data_gaps = [
-		"Exact per-GB prices vary slightly by region — the arithmetic uses the published ap-south-1 rates.",
+		"Per-GB prices vary by region — arithmetic uses ap-south-1.",
 	];
-	return finish(rec, f, "low", "Cost computed from published per-GB rates on the measured size; deterministic, no estimates.");
+	return finish(rec, f, "low", "Published per-GB rates on the measured size.");
 }
 
 function eipRec(f: Finding, cur: number | null): RecDetail {
 	const rec = baseRec(f, cur);
-	rec.issue = "Elastic IP not associated with any running instance — billed hourly with or without traffic.";
+	rec.issue = "Elastic IP not associated — billed hourly with or without traffic.";
 	rec.options = [
 		{
 			title: "Release the address",
 			change: "EC2 console → Elastic IPs → Release this address",
 			saving_mo: cur ?? round2(EIP_HOURLY * 730),
-			trade_off: "Re-acquiring the same IP later is not guaranteed (most apps should use DNS anyway).",
+			trade_off: "Same IP not guaranteed later — prefer DNS.",
 		},
 	];
 	rec.selected = 0;
 	rec.change = rec.options[0].change;
 	rec.projected_cost_mo = 0;
 	rec.saving_mo = rec.options[0].saving_mo;
-	rec.why_selected = "Idle EIPs bill $0.005/hr with zero benefit; releasing is instant and free.";
+	rec.why_selected = "No benefit while idle; release is instant and free.";
 	rec.confidence = "high";
-	rec.calc_method = `$${EIP_HOURLY}/hr × 730h = ${usd(round2(EIP_HOURLY * 730))}/mo removed entirely on release`;
-	rec.risks = ["An app hard-coding this IP would break — grep configs/limits or use a DNS name before releasing."];
-	return finish(rec, f, "low", "EIP idle rate is a fixed published price.");
+	rec.calc_method = `$${EIP_HOURLY}/hr × 730h = ${usd(round2(EIP_HOURLY * 730))}/mo removed`;
+	rec.risks = ["Hard-coded IP references break — prefer a DNS name."];
+	return finish(rec, f, "low", "Published idle EIP rate.");
 }
 
 function snapshotRec(f: Finding, cur: number | null): RecDetail {
@@ -622,30 +623,30 @@ function snapshotRec(f: Finding, cur: number | null): RecDetail {
 	const size = num(m.size_gb);
 	const isLarge = f.category.startsWith("Review");
 	rec.issue = isLarge
-		? "Old, unlinked, large snapshot — of no AMI dependency yet still billed monthly."
-		: "Old unlinked snapshot: no AMI references it, and its age suggests it was retained by accident.";
+		? "Old, unlinked, large snapshot — no AMI reference, still billed."
+		: "Old unlinked snapshot — no AMI reference, likely retained by accident.";
 	rec.options = [
 		{
 			title: "Delete + enforce DLM retention",
 			change: `Delete this snapshot, then apply a Data Lifecycle Manager policy (30–90d auto-expiry) to the whole set`,
 			saving_mo: size !== null ? round2(size * SNAP_GB_MO) : cur,
-			trade_off: "Snapshots are just deleted data at $0.05/GB-mo — DLM policy prevents the recurrence.",
+			trade_off: "DLM prevents the pattern recurring.",
 		},
-		{ title: "Delete only this one", change: "Delete the snapshot now (no policy change)", saving_mo: null, trade_off: "Fast, but the same snapshot reappears next quarter." },
+		{ title: "Delete only this one", change: "Delete the snapshot now (no policy change)", saving_mo: null, trade_off: "Fast; recurs next quarter." },
 	];
 	rec.selected = 0;
 	rec.change = rec.options[0].change;
 	rec.projected_cost_mo = 0;
 	rec.saving_mo = rec.options[0].saving_mo;
-	rec.why_selected = "Deleting captures today's saving and the DLM policy stops the pattern that created it — a strictly better outcome than the one-off delete.";
+	rec.why_selected = "Captures the saving and stops recurrence via DLM.";
 	rec.confidence = "high";
 	rec.calc_method = size !== null
-		? `${size}GB × $${SNAP_GB_MO}/GB-mo = ${usd(round2(size * SNAP_GB_MO))}/mo reduced to $0 on delete`
+		? `${size}GB × $${SNAP_GB_MO}/GB-mo = ${usd(round2(size * SNAP_GB_MO))}/mo → $0`
 		: "Snapshot rate $0.05/GB-mo";
 	rec.risks = [
-		"Compliance regimes sometimes mandate keeping specific snapshots — verify policy first.",
+		"Compliance may require this snapshot — verify policy.",
 	];
-	return finish(rec, f, "low", "ami_linked = false observed directly in the describe call; cost = published rate × measured size.");
+	return finish(rec, f, "low", "ami_linked = false from describe; published rate × measured size.");
 }
 
 // ── RDS handlers ────────────────────────────────────────────────────────────
@@ -659,40 +660,40 @@ function rdsDownsizeRec(f: Finding, cur: number | null): RecDetail {
 	const d3 = stepDown(cls, 3);
 	const p1 = d1 ? rdsPriceOf(d1.type, maz) ?? (cur !== null ? round2(cur / d1.divisor) : null) : null;
 	const p3 = d3 ? rdsPriceOf(d3.type, maz) ?? (cur !== null ? round2(cur / d3.divisor) : null) : null;
-	rec.issue = `Instance class ${cls} is far larger than its steady load (CPU ${m.cpu_avg ?? "?"}%, conns ${m.conns_avg ?? "?"}).`;
+	rec.issue = `${cls}: CPU ${m.cpu_avg ?? "?"}% / conns ${m.conns_avg ?? "?"} — oversized.`;
 	rec.options = [];
 	if (d1) rec.options.push({
 		title: "Downsize one step",
 		change: `${cls} → ${d1.type}${maz ? " (MultiAZ stays on — both AZs resized)" : ""}`,
 		saving_mo: p1 !== null && cur !== null ? round2(Math.max(0, cur - p1)) : null,
-		trade_off: "Reboot inside the maintenance window; MultiAZ failover makes it brief.",
+		trade_off: "Reboot in the maintenance window.",
 	});
 	if (d3) rec.options.push({
 		title: "Downsize deeper (3 steps)",
 		change: `${cls} → ${d3.type}`,
 		saving_mo: p3 !== null && cur !== null ? round2(Math.max(0, cur - p3)) : null,
-		trade_off: "Deeper cut — needs a 30-day low-usage record and max_connections headroom check.",
+		trade_off: "Needs 30d low usage + max_connections check.",
 	});
 	if (maz || Number(m.cpu_avg) < 10) rec.options.push({
 		title: "Aurora Serverless v2 switch",
 		change: "Migrate to Aurora Serverless v2 (same engine) — capacity auto-scales in 0.5 ACU steps to actual load",
 		saving_mo: cur !== null ? round2(cur * 0.7) : null,
-		trade_off: "Bigger migration (data copy + cutover); ends the pay-for-peak model for spiky workloads.",
+		trade_off: "Data copy + cutover; ends pay-for-peak.",
 	});
 	pickBest(rec, cur);
 	rec.why_selected = rec.options[rec.selected] !== undefined
-		? `${rec.options[rec.selected].title} yields the biggest measured saving (${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo) against the observed CPU/connection profile.`
+		? `Best saving: ${usd(rec.options[rec.selected].saving_mo)}/mo of ${usd(cur)}/mo.`
 		: "";
 	rec.confidence = m.cpu_avg != null && m.conns_avg != null ? "medium" : "low";
 	rec.risks = [
-		"The resize triggers a reboot in the maintenance window.",
-		"max_connections shrinks with the class — verify it still covers the app pool plus autoscale.",
+		"Resize reboots in the maintenance window.",
+		"max_connections shrinks — verify app pool + autoscale.",
 	];
 	rec.data_gaps = [
-		"Memory is not directly measured (no Performance Insights taken) — a 24h Insights check removes doubt before the resize.",
+		"Memory not measured (no Performance Insights) — check before resizing.",
 	];
 	if (cur === null) rec.data_gaps.push("Instance price unknown in this window.");
-	return finish(rec, f, "medium", `Measured CPU ${m.cpu_avg ?? "?"}% / conns ${m.conns_avg ?? "?"} over the window${p1 !== null ? "; target price derived from family-linear pricing" : ""}.`);
+	return finish(rec, f, "medium", `CPU ${m.cpu_avg ?? "?"}% / conns ${m.conns_avg ?? "?"} measured${p1 !== null ? "; target price from family-linear pricing" : ""}.`);
 }
 
 function rdsStoppedRec(f: Finding, cur: number | null): RecDetail {
@@ -700,31 +701,31 @@ function rdsStoppedRec(f: Finding, cur: number | null): RecDetail {
 	const rec = baseRec(f, cur);
 	const storageGb = num(m.storage_gb);
 	const keepCost = storageGb !== null ? round2(storageGb * 0.095) : null;
-	rec.issue = "Stopped RDS instance: compute is paused but storage + automated backups keep billing — and RDS auto-restarts instances stopped more than 7 days, so stop-based savings are unreliable.";
+	rec.issue = "Stopped RDS — storage + backups still bill; auto-restart after 7 days.";
 	rec.options = [
 		{
 			title: "Final snapshot then delete",
 			change: `Take a final snapshot and delete the ${m.engine ?? "DB"} instance${storageGb !== null ? ` (${storageGb}GB storage)` : ""}`,
 			saving_mo: cur,
-			trade_off: `Snapshot retention (~${usd(keepCost)}/mo) replaces the running cost until expired.`,
+			trade_off: `Snapshot keeps data at ~${usd(keepCost)}/mo.`,
 		},
-		{ title: "Keep stopped", change: "Leave stopped for a planned return (storage keeps billing; auto-restart kicks in at 7 days)", saving_mo: null, trade_off: "Only sensible for a short, deliberate pause." },
+		{ title: "Keep stopped", change: "Leave stopped for a planned return (storage keeps billing; auto-restart kicks in at 7 days)", saving_mo: null, trade_off: "Only for a short, deliberate pause." },
 	];
 	rec.selected = 0;
 	rec.change = rec.options[0].change;
 	rec.projected_cost_mo = keepCost;
 	rec.saving_mo = cur;
-	rec.why_selected = "A stopped instance still earns nothing: the snapshot option stops compute + instance-class charges while keeping the data at snapshot rate.";
+	rec.why_selected = "Stops compute + instance charges; data stays at snapshot rate.";
 	rec.confidence = "high";
 	rec.calc_method = cur !== null
-		? `Measured running cost ${usd(cur)}/mo → snapshot-only ${usd(keepCost)}/mo ⇒ ${usd(keepCost !== null ? round2(cur - keepCost) : cur)}/mo`
-		: "Running cost from the price table; snapshot at $0.095/GB-mo";
+		? `${usd(cur)}/mo → ${usd(keepCost)}/mo snapshot ⇒ ${usd(keepCost !== null ? round2(cur - keepCost) : cur)}/mo`
+		: "Running cost from price table; snapshot $0.095/GB-mo";
 	rec.risks = [
-		"Some jobs reference the DB by name or a startup script that will break after deletion.",
-		"Search parameter group, option group, and network context — a restore needs them re-set.",
+		"Startup scripts / app configs referencing the DB will break.",
+		"Restore needs the parameter group, option group and network context.",
 	];
-	if (keepCost !== null) rec.data_gaps.push(`Remaining snapshot/storage cost (~${usd(keepCost)}/mo) is NOT subtracted from the headline saving.`);
-	return finish(rec, f, "medium", `Status '${m.state ?? "stopped"}' confirmed from describe; class + storage from the same call.`);
+	if (keepCost !== null) rec.data_gaps.push(`Snapshot cost ~${usd(keepCost)}/mo is not subtracted from the headline saving.`);
+	return finish(rec, f, "medium", `Status '${m.state ?? "stopped"}'; class + storage from describe.`);
 }
 
 // ── Network / load balancing / EKS / secrets / CW / S3 handlers ─────────────
@@ -736,8 +737,8 @@ function elbRec(f: Finding, cur: number | null): RecDetail {
 	const isNoTargets = f.category.includes("No healthy targets");
 	const base24 = round2(0.0225 * 730); // typical ALB hourly base
 	rec.issue = isNoTargets
-		? `Load balancer has ${m.healthy ?? 0} healthy / ${m.unhealthy ?? "?"} unhealthy targets — it is billed (base + LCU) while serving no traffic.`
-		: `Near-zero traffic LB (${reqs ?? "n/a"} requests over the window) — paying the fixed base plus LCU for nothing.`;
+		? `No healthy targets (${m.healthy ?? 0} healthy / ${m.unhealthy ?? "?"} unhealthy) — still billed.`
+		: `Near-zero traffic (${reqs ?? "n/a"} requests) — fixed base + LCU billed.`;
 	rec.options = [
 		{
 			title: isNoTargets ? "Delete the load balancer" : "Delete after consolidating listeners",
@@ -745,29 +746,29 @@ function elbRec(f: Finding, cur: number | null): RecDetail {
 				? `Delete ${String(m.type ?? "ALB")} and its target groups (fix targets first if the service should exist)`
 				: "Move listeners onto an active ALB via listener rules (host/path), then delete this one",
 			saving_mo: cur ?? base24,
-			trade_off: "DNS records pointing at this LB must be re-pointed or allowed to lapse.",
+			trade_off: "Re-point DNS first.",
 		},
 		{
 			title: "Fix target health instead",
 			change: isNoTargets ? "Repair the registered targets (their health check path/port/SG) and keep the LB in service" : "",
 			saving_mo: null,
-			trade_off: "Only right if the service behind it is genuinely needed — that is a product decision.",
+			trade_off: "Only if the service is still needed.",
 		},
 	];
 	pickBest(rec, cur);
 	rec.change = rec.options[rec.selected].change;
 	rec.projected_cost_mo = 0;
 	rec.saving_mo = cur ?? base24;
-	rec.why_selected = "Both the base charge and LCU charges disappear the moment the LB is deleted; there is no lighter-weight variant with a lower fixed cost.";
+	rec.why_selected = "Base + LCU charges stop immediately on delete.";
 	rec.confidence = cur !== null ? "high" : "medium";
 	rec.calc_method = cur !== null
-		? `Measured bill ${usd(cur)}/mo → $0 after deletion (any dependent DNS/records excluded)`
-		: `ALB base $0.0225/hr × 730h ≈ ${usd(base24)}/mo plus LCU charges`;
+		? `${usd(cur)}/mo → $0 on delete`
+		: `ALB base $0.0225/hr × 730h ≈ ${usd(base24)}/mo + LCU`;
 	rec.risks = [
-		"Anything still sending requests here breaks when the LB disappears — the near-zero traffic must be accounted for first.",
+		"Anything still sending requests here breaks — confirm first.",
 	];
-	if (cur === null) rec.data_gaps.push("LCU charges not measured in this scan — total bill is base + LCU.");
-	return finish(rec, f, "medium", `LB state: ${m.healthy ?? "?"} healthy / ${m.unhealthy ?? "?"} unhealthy targets, ${reqs ?? "n/a"} requests measured over the window.`);
+	if (cur === null) rec.data_gaps.push("LCU not measured — bill is base + LCU.");
+	return finish(rec, f, "medium", `${m.healthy ?? "?"} healthy / ${m.unhealthy ?? "?"} unhealthy, ${reqs ?? "n/a"} requests.`);
 }
 
 function natRec(f: Finding, cur: number | null): RecDetail {
@@ -778,21 +779,21 @@ function natRec(f: Finding, cur: number | null): RecDetail {
 	const baseMo = round2(NAT_HOURLY * 730);
 	const idle = f.category.startsWith("Idle");
 	rec.issue = idle
-		? `NAT gateway processes almost no traffic (${outGb}GB out per window) — the fixed $${NAT_HOURLY}/hr dominates the bill.`
-		: `Low-traffic NAT — the fixed hourly base dominates its cost at this volume.`;
+		? `NAT: ${outGb}GB out per window — the $${NAT_HOURLY}/hr base dominates.`
+		: `Low-traffic NAT — fixed hourly base dominates.`;
 	rec.options = idle ?
 		[
 			{
 				title: "Delete the NAT gateway",
 				change: "VPC console → NAT gateways → delete, then remove the private route-table route that points at it",
 				saving_mo: round2(baseMo + dataProcMo),
-				trade_off: "Any private subnet still routed through it loses internet egress — check route tables first.",
+				trade_off: "Check route tables first — egress stops.",
 			},
 			{
 				title: "Replace with VPC endpoints",
 				change: "Add S3 + DynamoDB gateway endpoints (free) or interface endpoints ($0.01/hr per AZ) for only the S3/DDB traffic, then delete the NAT",
 				saving_mo: round2(baseMo * 0.75 + dataProcMo),
-				trade_off: "Keeps private access for AWS services; general internet egress still needs a NAT elsewhere.",
+				trade_off: "AWS traffic stays private; other egress needs a NAT.",
 			},
 		] :
 		[
@@ -800,30 +801,30 @@ function natRec(f: Finding, cur: number | null): RecDetail {
 				title: "Consolidate single-AZ",
 				change: "Drop one of two NATs if its AZ carries minimal traffic and cross-AZ resilience can be relaxed there",
 				saving_mo: round2(baseMo + dataProcMo * 0.5),
-				trade_off: "Reduces AZ fault-tolerance for outbound traffic in that subnet group.",
+				trade_off: "Reduces AZ fault-tolerance for egress.",
 			},
 			{
 				title: "Add S3/DynamoDB VPC endpoints",
 				change: "Gateway endpoints for S3+DynamoDB (free) — their traffic stops flowing through the NAT",
 				saving_mo: round2(outGb * NAT_HOURLY * 0.6),
-				trade_off: "Zero cost; narrows the NAT's per-GB bill to genuinely non-AWS destinations.",
+				trade_off: "Free; narrows per-GB charges to non-AWS traffic.",
 			},
 		];
 	pickBest(rec, cur);
 	rec.change = rec.options[rec.selected].change;
 	rec.projected_cost_mo = cur !== null && rec.saving_mo !== null ? round2(Math.max(0, cur - rec.saving_mo)) : null;
 	rec.why_selected = rec.options[rec.selected].title === "Replace with VPC endpoints"
-		? "Gateway endpoints are free, preserve private AWS access, and the NAT base charge also disappears."
-		: "The fixed hourly base is the dominant, unavoidable charge while the NAT exists — removing it is the only way to stop it.";
+		? "Free endpoints keep AWS access; the NAT base also disappears."
+		: "The hourly base is unavoidable while the NAT exists.";
 	rec.confidence = "high";
 	rec.calc_method = cur !== null
-		? `Measured window bill ${usd(cur)}/mo → $0 (or ${usd(rec.projected_cost_mo)} with endpoints) after the change; per-GB processing of out ${outGb}GB included`
-		: `NAT base $${NAT_HOURLY}/hr × 730h = ${usd(baseMo)}/mo + per-GB data processing on measured ${outGb}GB`;
+		? `${usd(cur)}/mo → $0 (or ${usd(rec.projected_cost_mo)} with endpoints); ${outGb}GB processing included`
+		: `$${NAT_HOURLY}/hr × 730h = ${usd(baseMo)}/mo + ${outGb}GB processing`;
 	rec.risks = [
-		"Deleting the NAT does not automatically delete its Elastic IP — release it separately to avoid stray $3.65/mo EIP charges.",
-		"Private subnets in dependent route tables can silently lose egress.",
+		"Release the NAT's Elastic IP separately (else $3.65/mo).",
+		"Dependent private subnets lose egress.",
 	];
-	return finish(rec, f, "medium", `NAT bytes-out ${outGb}GB measured over the window; base rate $${NAT_HOURLY}/hr is published.`);
+	return finish(rec, f, "medium", `Bytes-out ${outGb}GB; base $${NAT_HOURLY}/hr published.`);
 }
 
 function eksRec(f: Finding, cur: number | null): RecDetail {
@@ -833,34 +834,34 @@ function eksRec(f: Finding, cur: number | null): RecDetail {
 	const oldV = f.category.includes("Old K8s");
 	if (noNg) {
 		const baseMo = round2(EKS_CLUSTER_HOURLY * 730);
-		rec.issue = "EKS cluster with no nodegroups or workloads — still paying the control-plane hourly rate.";
+		rec.issue = "EKS cluster with no nodegroups or workloads — control-plane still billed.";
 		rec.options = [
-			{ title: "Delete the cluster", change: "EKS console → delete cluster + its leftover ELBs/volumes/ENIs", saving_mo: cur ?? baseMo, trade_off: "Rebuilding a cluster later is easy (eksctl/IaC) but configs/state are lost." },
-			{ title: "Keep control plane only", change: "If workloads return soon, keep the control plane and add Fargate profiles when needed", saving_mo: null, trade_off: "The $73/mo control-plane bill continues meanwhile." },
+			{ title: "Delete the cluster", change: "EKS console → delete cluster + its leftover ELBs/volumes/ENIs", saving_mo: cur ?? baseMo, trade_off: "Rebuild later via IaC; state lost." },
+			{ title: "Keep control plane only", change: "If workloads return soon, keep the control plane and add Fargate profiles when needed", saving_mo: null, trade_off: "$73/mo continues." },
 		];
 		rec.selected = 0; rec.change = rec.options[0].change;
 		rec.saving_mo = cur ?? baseMo; rec.projected_cost_mo = 0;
-		rec.why_selected = "An idle control plane produces nothing; clearing and rebuilding from IaC when needed is cheaper than parking it.";
+		rec.why_selected = "Idle control plane produces nothing; delete and rebuild from IaC.";
 		rec.confidence = cur !== null ? "high" : "medium";
-		rec.calc_method = cur !== null ? `Measured ${usd(cur)}/mo → $0 on delete` : `Control plane $${EKS_CLUSTER_HOURLY}/hr × 730h = ${usd(baseMo)}/mo`;
-		rec.risks = ["Check for leftover ALBs/volumes in the cluster's VPC — delete them too, or the bill only partially drops."];
-		rec.data_gaps = ["The cluster's true bill includes any leftover worker instance hours — none were found in this scan."];
-		return finish(rec, f, "medium", `No managed nodegroups found via describe_nodegroups; control-plane rate published at $${EKS_CLUSTER_HOURLY}/hr.`);
+		rec.calc_method = cur !== null ? `${usd(cur)}/mo → $0 on delete` : `$${EKS_CLUSTER_HOURLY}/hr × 730h = ${usd(baseMo)}/mo`;
+		rec.risks = ["Delete leftover ALBs/volumes in the VPC too."];
+		rec.data_gaps = ["Worker instance hours not found in this scan."];
+		return finish(rec, f, "medium", `No nodegroups from describe; $${EKS_CLUSTER_HOURLY}/hr published.`);
 	}
 	if (oldV) {
-		rec.issue = "Cluster is on an EOL Kubernetes version — extended-support surcharge applies once past the 14-month window.";
+		rec.issue = "EOL Kubernetes version — extended-support surcharge applies.";
 		rec.options = [
-			{ title: "In-place upgrade to 1.28+", change: "Bump control-plane version, then update each nodegroup AMI", saving_mo: null, trade_off: "Extends support-fee exposure; requires pod-disruption scheduling." },
-			{ title: "Upgrade + demote to Fargate Spot", change: "Upgrade version AND move non-critical workloads to Fargate Spot (~70% cheaper per pod)", saving_mo: null, trade_off: "Spot pods can be evicted with 2min notice." },
+			{ title: "In-place upgrade to 1.28+", change: "Bump control-plane version, then update each nodegroup AMI", saving_mo: null, trade_off: "Needs pod-disruption scheduling." },
+			{ title: "Upgrade + demote to Fargate Spot", change: "Upgrade version AND move non-critical workloads to Fargate Spot (~70% cheaper per pod)", saving_mo: null, trade_off: "Spot evictions with 2min notice." },
 		];
 		rec.selected = 1; rec.change = rec.options[1].change;
 		rec.saving_mo = cur; rec.projected_cost_mo = cur !== null ? round2(Math.max(0, cur - (rec.saving_mo ?? 0))) : null;
-		rec.why_selected = "The upgrade removes the surcharge moving forward while Fargate Spot cuts the underlying compute bill — two saving layers in one change.";
-		rec.confidence = "medium"; rec.data_gaps = ["Extended-support rate depends on the exact EOL phase and region; the headline figure is the conservative rule-of-thumb."];
-		rec.risks = ["Version jump must follow the deprecation ledger of removed APIs (check on your manifests)."];
-		return finish(rec, f, "medium", `Cluster version scanned at v${String(m.version ?? "?")}, published extended-support rate is $0.50/hr over standard.`);
+		rec.why_selected = "Upgrade removes the surcharge; Fargate Spot cuts compute.";
+		rec.confidence = "medium"; rec.data_gaps = ["Surcharge rate depends on EOL phase and region — headline is conservative."];
+		rec.risks = ["Check removed APIs in manifests before the jump."];
+		return finish(rec, f, "medium", `Version v${String(m.version ?? "?")}; extended support $0.50/hr over standard.`);
 	}
-	rec.issue = "Nodegroup is provisioned far larger than workload demand (sizable idle instance-hours vs actual usage).";
+	rec.issue = "Nodegroup oversized — idle instance-hours vs actual demand.";
 	// Derive the compute bill from the declared nodegroup shape + published price.
 	const types = Array.isArray(m.instance_types) ? m.instance_types : [];
 	const nodes = num(m.desired_size) ?? 1;
@@ -870,36 +871,36 @@ function eksRec(f: Finding, cur: number | null): RecDetail {
 	const curBill = cur ?? derived;
 	if (curBill !== null) rec.current_cost_mo = curBill;
 	rec.options = [
-		{ title: "Karpenter + consolidation", change: "Deploy Karpenter with bin-packing consolidation and a right-sized instance set", saving_mo: curBill !== null ? round2(curBill * 0.7) : null, trade_off: "New controller dependency — needs its own ops care." },
-		{ title: "Spot for stateless", change: "Move stateless deployments to Spot (or Fargate Spot) with graceful-drain PDBs", saving_mo: curBill !== null ? round2(curBill * 0.6) : null, trade_off: "Spot interruptions require resume-tolerant design." },
+		{ title: "Karpenter + consolidation", change: "Deploy Karpenter with bin-packing consolidation and a right-sized instance set", saving_mo: curBill !== null ? round2(curBill * 0.7) : null, trade_off: "New controller to operate." },
+		{ title: "Spot for stateless", change: "Move stateless deployments to Spot (or Fargate Spot) with graceful-drain PDBs", saving_mo: curBill !== null ? round2(curBill * 0.6) : null, trade_off: "Spot evictions — needs resume-tolerant design." },
 	];
 	rec.selected = 0; rec.change = rec.options[0].change;
 	rec.saving_mo = rec.options[0].saving_mo;
 	rec.projected_cost_mo = curBill !== null ? round2(Math.max(0, curBill - (rec.saving_mo ?? 0))) : null;
-	rec.why_selected = "Karpenter's bin-packing + right-sizing captures the widest set of savings and subsumes Spot-on-stateless later.";
-	rec.confidence = curBill !== null ? "low" : "low";
+	rec.why_selected = "Widest saving coverage; can add Spot later.";
+	rec.confidence = "low";
 	rec.data_gaps = nodePrice !== null
-		? [`The waste share is unknown in this scan — the bill is derived from the declared nodegroup (${nodes} × ${nodeType} at ${usd(nodePrice)}/mo = ${usd(curBill)}/mo) and a conservative 70% consolidation saving; measure per-pod requests first.`]
-		: ["The nodegroup's bill and its waste share are both unknown in this scan; treat any estimate as an upper bound."];
-	rec.risks = ["Old AMIs incompatible with Karpenter need refresh; any PodDisruptionBudget must be reviewed before eviction waves."];
-	return finish(rec, f, "medium", `Nodegroup shape from the API: ${nodes} nodes × ${nodeType ?? "?"} at ${usd(nodePrice ?? null)}/mo.`);
+		? [`Waste share unknown — bill derived from nodegroup (${nodes} × ${nodeType} at ${usd(nodePrice)}/mo = ${usd(curBill)}/mo) with a 70% consolidation assumption.`]
+		: ["Nodegroup bill and waste share unknown — treat estimates as an upper bound."];
+	rec.risks = ["Old AMIs may block Karpenter; review PodDisruptionBudgets before evictions."];
+	return finish(rec, f, "medium", `Nodegroup: ${nodes} × ${nodeType ?? "?"} at ${usd(nodePrice ?? null)}/mo.`);
 }
 
 function secretRec(f: Finding, cur: number | null): RecDetail {
 	const m = f.meta ?? {};
 	const rec = baseRec(f, cur);
-	rec.issue = "Secret not accessed in 90+ days — the fixed per-secret price accrues with no consumer.";
+	rec.issue = "Secret unaccessed 90+ days — billed per secret, no consumer.";
 	rec.options = [
-		{ title: "Delete (recoverable)", change: "Delete the secret — it stays recoverable 7–30 days, giving stray consumers time to flag", saving_mo: cur ?? 0.4, trade_off: "If a forgotten app reads it, the recovery window is the warning period; after that, gone." },
-		{ title: "Consolidate", change: "Merge several single-field secrets into one structured secret", saving_mo: null, trade_off: "Drops the per-secret price for the redundant copies." },
+		{ title: "Delete (recoverable)", change: "Delete the secret — recoverable 7–30 days", saving_mo: cur ?? 0.4, trade_off: "Recovery window is the only warning." },
+		{ title: "Consolidate", change: "Merge single-field secrets into one structured secret", saving_mo: null, trade_off: "Drops redundant per-secret charges." },
 	];
 	rec.selected = 0; rec.change = rec.options[0].change;
 	rec.projected_cost_mo = 0; rec.saving_mo = rec.options[0].saving_mo;
-	rec.why_selected = "A dead secret is pure liability (security + cost); the deletion recovery window makes the move reversible.";
+	rec.why_selected = "Dead secret = cost + security liability; deletion is reversible.";
 	rec.confidence = "high";
-	rec.calc_method = "$0.40/secret/mo is the published per-secret rate — deleted secret brings it to $0";
+	rec.calc_method = "$0.40/secret/mo → $0 on delete";
 	rec.risks = [
-		"CloudTrail GetSecretValue could be missing third-party reads if the audit role lacks CloudTrail scope.",
+		"CloudTrail may miss third-party reads if the audit role lacks scope.",
 	];
 	return finish(rec, f, "low", `Last accessed ${m.last_accessed ?? ">90d ago"} from describe_secret; rate $0.40/secret/mo published.`);
 }
@@ -911,18 +912,18 @@ function cwRec(f: Finding, cur: number | null): RecDetail {
 	const storedGb = num(m.stored_gb) ?? 0;
 	const ingestMo = ingestD > 0 ? round2(ingestD * 30 * CW_INGEST_GB) : null;
 	rec.issue = m.retention_days
-		? `High daily ingestion (${ingestD}GB/day) — retention is fine but the ingestion itself dominates.`
-		: "Log group never expires — stored logs accumulate indefinitely at the storage rate.";
+		? `Ingest ${ingestD}GB/day — ingestion rate dominates the bill.`
+		: "No retention set — logs accumulate at storage rate.";
 	const isHigh = f.category.includes("High ingestion");
 	if (isHigh) {
 		rec.options = [
-			{ title: "Sample + metric-filters", change: "Cut DEBUG at source libraries and emit CloudWatch metric filters instead of full log lines", saving_mo: ingestMo ?? cur, trade_off: "You keep visibility via metrics but lose per-event detail for the sampled classes." },
-			{ title: "Export to S3 + retain 7d in CW", change: "Ship full logs to S3 (much cheaper retention chain) and cap the CloudWatch copy at 7d", saving_mo: ingestMo !== null ? round2(ingestMo * 0.3) : null, trade_off: "Search moves from CloudWatch Insights to Athena/Glacier queries." },
+			{ title: "Sample + metric-filters", change: "Cut DEBUG at source libraries and emit CloudWatch metric filters instead of full log lines", saving_mo: ingestMo ?? cur, trade_off: "Metrics kept; per-event detail lost for sampled classes." },
+			{ title: "Export to S3 + retain 7d in CW", change: "Ship full logs to S3 (much cheaper retention chain) and cap the CloudWatch copy at 7d", saving_mo: ingestMo !== null ? round2(ingestMo * 0.3) : null, trade_off: "Search moves to Athena/Glacier." },
 		];
 	} else {
 		rec.options = [
-			{ title: "Set retention 30–90d", change: "Logs console → per-group retention policy → 30–90d (operational groups 30d, security 90d+)", saving_mo: cur, trade_off: "Older logs become unrecoverable after expiry — export what must live on to S3 first." },
-			{ title: "Retention + DEBUG cut", change: "Same retention, plus cut DEBUG at source to shrink ingest too", saving_mo: null, trade_off: "Smaller ingest lowers the per-GB ingestion line as well." },
+			{ title: "Set retention 30–90d", change: "Logs console → per-group retention policy → 30–90d (operational groups 30d, security 90d+)", saving_mo: cur, trade_off: "Export to S3 first — expiry is permanent." },
+			{ title: "Retention + DEBUG cut", change: "Same retention, plus cut DEBUG at source to shrink ingest too", saving_mo: null, trade_off: "Also lowers per-GB ingest." },
 		];
 	}
 	pickBest(rec, cur);
@@ -931,16 +932,16 @@ function cwRec(f: Finding, cur: number | null): RecDetail {
 		? round2(Math.min(ingestMo, ingestD * 30 * CW_STORE_GB_MO)) // capped at 30 days of stored ingest
 		: null;
 	rec.why_selected = isHigh
-		? "Ingestion $0.50/GB is the dominant price and only source-level verbosity cuts it; export alone does not remove that line item."
-		: "The storage cost only stops accumulating when a concrete retention bound expires old data — this is a one-change fix.";
+		? "Ingest is the dominant line item; source-level verbosity is the only real cut."
+		: "Retention bound is the one-change fix for storage growth.";
 	rec.confidence = "medium";
 	rec.calc_method = isHigh
-		? `${ingestD}GB/day × $${CW_INGEST_GB}/GB ⇒ ${usd(ingestMo)}/mo ingest; source-level sampling cuts the bulk of that`
-		: `${storedGb}GB stored × $${CW_STORE_GB_MO}/GB-mo ⇒ ${usd(cur)}/mo; retention 30d caps stored volume at the last 30 days of ingest`;
+		? `${ingestD}GB/day × $${CW_INGEST_GB}/GB ⇒ ${usd(ingestMo)}/mo ingest`
+		: `${storedGb}GB × $${CW_STORE_GB_MO}/GB-mo ⇒ ${usd(cur)}/mo; 30d retention caps stored volume`;
 	rec.risks = [
-		"Expiring logs too early erases forensic history — stage a 90d S3 export before applying the 30d retention.",
+		"Early expiry erases forensics — export 90d to S3 first.",
 	];
-	return finish(rec, f, "low", `Ingest ${ingestD}GB/day, stored ${storedGb}GB from CloudWatch ListMetrics; rates $${CW_INGEST_GB} ingest / $${CW_STORE_GB_MO} storage per GB published.`);
+	return finish(rec, f, "low", `Ingest ${ingestD}GB/day, stored ${storedGb}GB; rates $${CW_INGEST_GB} / $${CW_STORE_GB_MO} per GB.`);
 }
 
 function s3Rec(f: Finding, cur: number | null): RecDetail {
@@ -951,101 +952,101 @@ function s3Rec(f: Finding, cur: number | null): RecDetail {
 	const isVersioned = f.category.includes("Versioned");
 	const objects = num(m.objects);
 	if (isIdle) {
-		rec.issue = "Bucket holds almost nothing and sees no requests — cost is small but a hygiene signal for the account-wide picture.";
+		rec.issue = "Bucket near-empty, no requests — hygiene signal.";
 		rec.options = [
-			{ title: "Delete the bucket", change: "Confirm no app/IaC references the name, then empty and delete", saving_mo: cur ?? 0, trade_off: "Keeps the S3 namespace clean for buckets that matter." },
+			{ title: "Delete the bucket", change: "Confirm no app/IaC references the name, then empty and delete", saving_mo: cur ?? 0, trade_off: "Frees the S3 namespace." },
 			{ title: "Keep + 7d expiry", change: "Apply a 7d object-expiry lifecycle to prove it stays unused, then delete", saving_mo: null, trade_off: "Cheap insurance against a consumer appearing." },
 		];
 		rec.selected = 0; rec.change = rec.options[0].change;
 		rec.saving_mo = cur ?? 0; rec.projected_cost_mo = 0;
-		rec.why_selected = "At near-zero size, deletion is safe and the request/storage cost was already ~0 — this is hygiene, not dollars.";
+		rec.why_selected = "Near-zero size — deletion is safe; saving is hygiene, not dollars.";
 		rec.confidence = "high";
-		rec.calc_method = `Measured ${sizeGb}GB / ${objects ?? "?"} objects → $${money(cur ?? 0)}/mo → $0 on delete`;
-		rec.risks = ["References in code/IaC must be checked before removal."];
-		return finish(rec, f, "low", `Bucket inventory (ListObjectsV2 + GetBucketLifecycle) reported ${sizeGb}GB / ${objects ?? "?"} objects, no lifecycle rule.`);
+		rec.calc_method = `${sizeGb}GB / ${objects ?? "?"} objects → $${money(cur ?? 0)}/mo → $0 on delete`;
+		rec.risks = ["Check code/IaC references before removal."];
+		return finish(rec, f, "low", `${sizeGb}GB / ${objects ?? "?"} objects, no lifecycle rule.`);
 	}
 	if (isVersioned) {
 		const head = sizeGb !== null ? round2(Math.min(sizeGb * 0.4, 100)) : cur;
-		rec.issue = "Versioning is enabled with no noncurrent-version expiry — every overwritten copy bills forever.";
+		rec.issue = "Versioning on, no noncurrent expiry — overwritten copies bill forever.";
 		rec.options = [
-			{ title: "Expire noncurrent versions", change: "Lifecycle rule: delete noncurrent versions after 30–90d + abort incomplete multipart uploads after 7d", saving_mo: cur ?? head, trade_off: "Choose the days by your restore-drill needs." },
+			{ title: "Expire noncurrent versions", change: "Lifecycle rule: delete noncurrent versions after 30–90d + abort incomplete multipart uploads after 7d", saving_mo: cur ?? head, trade_off: "Pick days by restore-drill needs." },
 		];
 		rec.selected = 0; rec.change = rec.options[0].change;
 		rec.saving_mo = rec.options[0].saving_mo; rec.projected_cost_mo = null;
-		rec.why_selected = "Noncurrent versions are pure duplication of data that already exists in the current ones.";
+		rec.why_selected = "Noncurrent versions duplicate current data.";
 		rec.confidence = "medium";
 		rec.calc_method = cur !== null
-			? `Measured bill ${usd(cur)}/mo; roughly 40% of versioning overhead is redundant history (capped heuristic)`
-			: "Noncurrent share unknown — requires listing noncurrent versions";
-		rec.risks = ["Aggressive day-counts erase your restore points; match to backup policy."];
-		rec.data_gaps = ["Per-object access stats not collected — refine the retention window after one month of access logs."];
-		return finish(rec, f, "low", " bucket listing showed versioning enabled with no lifecycle rule present.");
+			? `${usd(cur)}/mo measured; ~40% of versioning overhead is redundant history (heuristic)`
+			: "Noncurrent share unknown — list noncurrent versions";
+		rec.risks = ["Aggressive day-counts erase restore points."];
+		rec.data_gaps = ["No per-object access stats — refine retention after 30d of logs."];
+		return finish(rec, f, "low", "Versioning enabled with no lifecycle rule.");
 	}
 	// No lifecycle policy
 	const scanSaving = round2(Math.min(sizeGb * 0.01, 200));
-	rec.issue = "No lifecycle policy: objects bill Standard rate forever, even the cold ones.";
+	rec.issue = "No lifecycle policy — cold objects bill Standard rate.";
 	rec.options = [
 		{
 			title: "Lifecycle rules (predictable)",
 			change: "Expire noncurrent 30–90d; Standard→Standard-IA at 30d → Glacier regular at 90d; abort multipart 7d",
 			saving_mo: scanSaving,
-			trade_off: "Retrieval fees + wait times for Glacier when data is requested again.",
+			trade_off: "Retrieval fees and wait times.",
 		},
 		{
 			title: "Intelligent-Tiering",
 			change: `Apply Intelligent-Tiering${objects !== null && objects < 500000 ? "" : " (8-tier auto-deciders)"}`,
 			saving_mo: round2(Math.min(sizeGb * 0.008, 200)),
-			trade_off: "No retrieval fees, zero lifecycle tuning — costs a small monitoring fee per object (>128KB).",
+			trade_off: "No retrieval fees; small per-object monitoring fee.",
 		},
 	];
 	rec.selected = objects !== null && objects > 1000000 ? 1 : 0;
 	rec.change = rec.options[rec.selected].change;
 	rec.projected_cost_mo = cur !== null && rec.saving_mo !== null ? round2(Math.max(0, cur - rec.saving_mo)) : null;
 	rec.why_selected = rec.selected === 1
-		? "With millions of objects and unknown access patterns, Intelligent-Tiering's automatic tier-shift beats hand-tuned transitions that risk retrieval fees."
-		: "Lifecycle rules with 30/90d transitions price cheaper than Intelligent-Tiering at this object count and produce predictable archive dates.";
+		? "Millions of objects, unknown access — auto tiering beats hand-tuned rules."
+		: "30/90d transitions are cheaper and predictable at this object count.";
 	rec.confidence = "medium";
 	rec.calc_method = cur !== null
-		? `Measured ${usd(cur)}/mo Standard ⇒ ${usd(rec.projected_cost_mo)}/mo after tier shift; scan estimate assumed ~35% data going cold`
-		: `${sizeGb}GB × Standard $0.023/GB ⇒ ${usd(round2(sizeGb * 0.023))}/mo today`;
+		? `${usd(cur)}/mo Standard ⇒ ${usd(rec.projected_cost_mo)}/mo after tier shift; assumes ~35% goes cold`
+		: `${sizeGb}GB × $0.023/GB ⇒ ${usd(round2(sizeGb * 0.023))}/mo today`;
 	rec.risks = [
-		"Glacier retrievals cost per-GB and take minutes — guarantee nothing business-critical goes there without a plan.",
+		"Glacier retrieval is per-GB and slow — plan before archiving critical data.",
 	];
 	rec.data_gaps = [
-		"No per-object access statistics available: the cold-share estimate (~35%) is a heuristic — refine after 30d of access logs.",
+		"No per-object access stats — ~35% cold-share is a heuristic.",
 	];
-	return finish(rec, f, "medium", `Bucket metrics: ${sizeGb}GB / ${objects ?? "?"} objects, lifecycle absent (verified via GetBucketLifecycle), ${usd(cur)}/mo measured storage cost.`);
+	return finish(rec, f, "medium", `${sizeGb}GB / ${objects ?? "?"} objects, no lifecycle rule, ${usd(cur)}/mo.`);
 }
 
 function vpnRec(f: Finding, cur: number | null): RecDetail {
 	const rec = baseRec(f, cur);
-	rec.issue = "Site-to-Site VPN attached with near-zero traffic — the $0.05/hr constant charges regardless.";
+	rec.issue = "Site-to-Site VPN near-zero traffic — $0.05/hr charges regardless.";
 	rec.options = [
-		{ title: "Delete the VPN connection + CGW", change: "VPC console → Site-to-Site VPN → delete connection and Customer Gateways", saving_mo: cur ?? round2(0.05 * 730), trade_off: "Re-establishing needs partner coordination (public IP + BGP setup)." },
+		{ title: "Delete the VPN connection + CGW", change: "VPC console → Site-to-Site VPN → delete connection and Customer Gateways", saving_mo: cur ?? round2(0.05 * 730), trade_off: "Re-setup needs partner coordination." },
 	];
 	rec.selected = 0; rec.change = rec.options[0].change;
 	rec.projected_cost_mo = 0; rec.saving_mo = rec.options[0].saving_mo;
-	rec.why_selected = "Idle VPNs bill $0.05/hr = ~$36.5/mo for a tunnel carrying nothing.";
+	rec.why_selected = "Idle tunnel: ~$36.5/mo for zero traffic.";
 	rec.confidence = "high";
-	rec.calc_method = `$0.05/hr × 730h = ${usd(round2(0.05 * 730))}/mo removed on deletion`;
-	rec.risks = ["If the far side ever needs the tunnel back, re-establishing requires their network ops team."];
-	return finish(rec, f, "low", "VPN hourly rate is published; near-zero traffic confirmed in the scan.");
+	rec.calc_method = `$0.05/hr × 730h = ${usd(round2(0.05 * 730))}/mo removed`;
+	rec.risks = ["Re-establishing needs the far side's network team."];
+	return finish(rec, f, "low", "Published VPN rate; near-zero traffic confirmed.");
 }
 
 function genericRec(f: Finding, cur: number | null): RecDetail {
 	const rec = baseRec(f, cur);
-	rec.issue = f.category.replace(/^[^—]+—\s*/, "") + " detected on this resource.";
+	rec.issue = f.category.replace(/^[^—]+—\s*/, "") + " on this resource.";
 	rec.options = [
-		{ title: "Apply the finding's recommended action", change: f.recommendation, saving_mo: num(f.est_monthly_saving_usd) ?? 0, trade_off: "Verify resource ownership before acting." },
+		{ title: "Apply the recommended action", change: f.recommendation, saving_mo: num(f.est_monthly_saving_usd) ?? 0, trade_off: "Verify ownership first." },
 	];
 	rec.selected = 0;
 	rec.change = f.recommendation;
 	rec.saving_mo = num(f.est_monthly_saving_usd) ?? 0;
 	rec.projected_cost_mo = cur !== null ? round2(Math.max(0, cur - (rec.saving_mo ?? 0))) : null;
-	rec.why_selected = "Single best available action for this finding type; resource-specific refinement needs the scanner's deeper metrics.";
+	rec.why_selected = "Only modelled action for this finding type.";
 	rec.confidence = "medium";
-	rec.data_gaps = ["This finding type is not fully modelled yet — the numbers rely on the scan's rule-of-thumb."];
-	rec.risks = ["Check ownership and dependencies before acting."];
+	rec.data_gaps = ["Finding type not fully modelled — numbers are rule-of-thumb."];
+	rec.risks = ["Check ownership and dependencies first."];
 	return finish(rec, f, "medium", "Rule-of-thumb from the scan engine.");
 }
 
