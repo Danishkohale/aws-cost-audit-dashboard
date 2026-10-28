@@ -144,7 +144,10 @@
 .dlabel.dim2 { color: var(--dim); }
 .ddetail b, .drec b, .dgrid label { color: var(--dim); }
 .drec { color: var(--fg); }
-.narrative { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; margin-top: .7rem; padding-top: .6rem; border-top: 1px dashed var(--line); }
+.narrative-wrap { margin-top: .7rem; padding-top: .6rem; border-top: 1px dashed var(--line); }
+.ai-note { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: var(--dim); font-size: .68rem; }
+.ai-badge { color: var(--acc); border: 1px solid rgba(74,222,128,.35); background: rgba(74,222,128,.12); border-radius: 999px; padding: .05rem .45rem; font-size: .6rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.narrative { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; margin-top: .5rem; }
 .narrative label { display: block; color: var(--dim); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .12rem; }
 .narrative p { margin: 0; font-size: .75rem; }
 .fnum { font-size: .62rem; }
