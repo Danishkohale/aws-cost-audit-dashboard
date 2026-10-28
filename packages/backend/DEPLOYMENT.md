@@ -174,6 +174,32 @@ npx serve .  # Runs on http://localhost:3001
 |----------|----------|---------|-------------|
 | `DB_DIR` | Yes | `/data` | SQLite database directory |
 | `NODE_ENV` | No | `production` | Environment mode |
+| `OPENROUTER_API_KEY` | No | — | Enables the grounded LLM narrative layer. Missing ⇒ rule-based text only. |
+| `OPENROUTER_MODEL` | No | `poolside/laguna-s-2.1:free` | Pinned model slug. Never `openrouter/free` (random router). |
+
+### LLM narrative layer (optional)
+
+`rules/llm.ts` adds a short business-impact / sequencing / owner / risk narrative
+to the highest-priority findings. It is deliberately narrow:
+
+- **The rule engine owns every number.** The model sees a frozen facts object
+  and is told not to write figures.
+- **Currency and percentage guardrail.** Any `$` or `%` figure not present in
+  the facts discards that narrative (`sanitizeNarrative` → `numbersAllowed`),
+  and the finding keeps its deterministic rule text.
+- **Best-effort.** No key, timeout, 429 or bad JSON never fails a scan.
+- Exit codes and totals are unchanged — narrative is additive only.
+
+Local setup:
+
+```bash
+cp packages/backend/.env.example packages/backend/.env
+# then set OPENROUTER_API_KEY in that file
+```
+
+Free model slugs rotate availability — if the default starts returning `429`,
+swap `OPENROUTER_MODEL` to another `:free` model. The guardrail is what makes a
+free model safe to use here; the model choice only affects prose quality.
 
 ### Frontend (Cloudflare Pages)
 | Variable | Required | Default | Description |

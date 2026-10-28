@@ -28,6 +28,16 @@ export interface RecOption {
 	trade_off: string;
 }
 
+/** Grounded narrative written by the backend LLM layer. */
+export interface RecNarrative {
+	business_impact: string;
+	sequencing: string;
+	owner_hint: string;
+	risk_callout: string;
+	confidence_note: string;
+	model: string;
+}
+
 /** Evidence-based remediation plan produced by the backend recommendation engine. */
 export interface RecDetail {
 	current_config: string;
@@ -50,6 +60,7 @@ export interface RecDetail {
 	priority_score: number;
 	priority_band: string;
 	tracking: string;
+	narrative?: RecNarrative;
 }
 
 // --- Types -------------------------------------------------------------------

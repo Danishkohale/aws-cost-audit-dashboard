@@ -21,6 +21,28 @@ export interface RecOption {
 	trade_off: string;
 }
 
+/**
+ * Grounded narrative written by the LLM layer (rules/llm.ts).
+ *
+ * The rule engine owns every number; the model may only restate figures that
+ * already appear in the finding facts. Any invented number discards the whole
+ * narrative (see `sanitizeNarrative`).
+ */
+export interface RecNarrative {
+	/** Plain-language business consequence of leaving this as-is. */
+	business_impact: string;
+	/** Why this action should come now vs later relative to the other findings. */
+	sequencing: string;
+	/** Who should own the change and what they should check first. */
+	owner_hint: string;
+	/** Operational risk to watch, grounded in `rec.risks` / `rec.data_gaps`. */
+	risk_callout: string;
+	/** One line on how far the numbers can be trusted, grounded in data gaps. */
+	confidence_note: string;
+	/** Model that produced the text (pinned, for reproducibility). */
+	model: string;
+}
+
 /** Evidence-based remediation plan attached to a finding (see rules/recs.ts). */
 export interface RecDetail {
 	/** Resource configuration as observed (type/class/state/age/size). */
@@ -57,6 +79,8 @@ export interface RecDetail {
 	priority_band: "P1 — Do first" | "P2 — Schedule" | "P3 — When convenient";
 	/** How estimated-vs-actual gets tracked after implementation. */
 	tracking: string;
+	/** Optional grounded narrative from the LLM layer (rules/llm.ts). */
+	narrative?: RecNarrative;
 }
 
 export interface Finding {

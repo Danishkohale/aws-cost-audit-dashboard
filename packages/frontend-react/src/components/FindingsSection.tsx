@@ -65,6 +65,14 @@ function EnginePlan({ rec }: { rec: RecDetail }) {
 
 			<p className="dwhy"><b>Why this is best</b> {rec.why_selected}</p>
 			<p className="drec"><b>Do this</b> {rec.change}</p>
+			{rec.narrative && (
+				<div className="narrative">
+					<div><label>Business impact</label><p>{rec.narrative.business_impact}</p></div>
+					<div><label>Sequencing</label><p>{rec.narrative.sequencing}</p></div>
+					<div><label>Owner / next step</label><p>{rec.narrative.owner_hint}</p></div>
+					<div><label>Risk callout</label><p>{rec.narrative.risk_callout}</p></div>
+				</div>
+			)}
 			<div className="costline">
 				<span><b>Cost</b> {rec.current_cost_mo !== null ? `${fmt$(rec.current_cost_mo)}/mo` : "not in window"} → {rec.projected_cost_mo !== null ? `${fmt$(rec.projected_cost_mo)}/mo after the change` : "projected not computable"}</span>
 				{rec.saving_mo !== null && <span className="green"><b>Net saving</b> {fmt$(rec.saving_mo)}/mo · {fmt$(rec.saving_an ?? rec.saving_mo * 12)}/yr</span>}

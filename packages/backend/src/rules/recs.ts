@@ -15,7 +15,7 @@
  *     modified. `rec.saving_mo` is the specific arithmetic for the chosen
  *     option; when the two differ, `estimate_note` explains the difference.
  */
-import type { Finding, RecDetail, RecOption } from "../types";
+import type { Finding, FindingMeta, RecDetail, RecOption } from "../types";
 import {
 	EC2_PRICE_MO,
 	RDS_PRICE_MO,

@@ -139,8 +139,14 @@ function planRows(f: Finding): Paragraph[] {
 	}
 	paras.push(labelled("Calculation method", r.calc_method));
 	paras.push(labelled("Why this option", r.why_selected));
+	if (r.narrative) {
+		paras.push(labelled("Business impact", r.narrative.business_impact));
+		paras.push(labelled("Sequencing", r.narrative.sequencing));
+		paras.push(labelled("Owner / next step", r.narrative.owner_hint));
+	}
 	const conf = r.confidence === "high" ? "High" : r.confidence === "medium" ? "Medium" : "Low";
-	paras.push(labelled(`Confidence: ${conf}`, r.confidence_basis));
+	paras.push(labelled(`Confidence: ${conf}`, r.narrative ? `${r.confidence_basis} ${r.narrative.confidence_note}` : r.confidence_basis));
+	if (r.narrative) paras.push(labelled("Risk callout", r.narrative.risk_callout));
 	if (r.estimate_note) paras.push(labelled("Estimate note", r.estimate_note));
 	if (r.risks.length > 0) paras.push(labelled("Risks", r.risks.join("; ")));
 	if (r.data_gaps.length > 0) paras.push(labelled("Data gaps (not inventable from available data)", r.data_gaps.join("; ")));

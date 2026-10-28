@@ -144,6 +144,9 @@
 .dlabel.dim2 { color: var(--dim); }
 .ddetail b, .drec b, .dgrid label { color: var(--dim); }
 .drec { color: var(--fg); }
+.narrative { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .55rem; margin-top: .7rem; padding-top: .6rem; border-top: 1px dashed var(--line); }
+.narrative label { display: block; color: var(--dim); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .12rem; }
+.narrative p { margin: 0; font-size: .75rem; }
 .fnum { font-size: .62rem; }
 
 /* ── Recommendations ──────────────────────────────────────────────── */
