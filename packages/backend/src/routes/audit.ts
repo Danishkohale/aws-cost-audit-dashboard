@@ -30,7 +30,6 @@ import {
 } from "../db/jobs";
 import { waitForSchema } from "../db/libsql";
 import { clearCreds, getCreds, putCreds } from "../creds";
-import { enrichWithLlm } from "../rules/llm";
 import type { Finding } from "../types";
 
 const REGION_RE = /^[a-z]{2}-[a-z-]+\d$/;
@@ -194,11 +193,6 @@ async function runBackgroundAudit(jobId: string): Promise<void> {
 		};
 
 		const payload = await runAwsAudit(aws, opts);
-
-		// Grounded narrative layer: rules keep every number, the LLM only
-		// explains. Best-effort — a failure leaves rule text in place.
-		logFn("[llm] writing contextual narrative (grounded in measured facts)…");
-		payload.findings = await enrichWithLlm(payload.findings, { log: (m) => appendLog(jobId, m) });
 
 		// Store cost info
 		await setCost(jobId, payload.live_cost_by_service, payload.cost_note);

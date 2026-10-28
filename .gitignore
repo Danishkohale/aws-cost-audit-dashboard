@@ -7,3 +7,5 @@ dist/
 !.env.example
 *.log
 .DS_Store
+# Local audit database (generated at runtime, never commit)
+packages/backend/data/

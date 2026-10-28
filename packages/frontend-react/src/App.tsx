@@ -149,7 +149,7 @@ function App() {
 							</div>
 							<OverviewSection job={job} m={m} />
 							<SavingsByService m={m} total={m.estMonthly} />
-							<FindingsSection m={m} total={m.estMonthly} />
+							<FindingsSection m={m} total={m.estMonthly} jobId={job.job_id} />
 							<RecommendationsSection m={m} />
 							<JobInfoSection job={job} m={m} />
 						</>

@@ -13,6 +13,7 @@
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { registerAiRoutes } from "./routes/ai";
 import { registerAuditRoutes } from "./routes/audit";
 import { registerDemoRoutes } from "./routes/demo";
 import { registerDownloadRoutes } from "./routes/download";
@@ -38,6 +39,7 @@ app.get("/api/health", (c) =>
 );
 
 registerAuditRoutes(app);
+registerAiRoutes(app);
 registerDemoRoutes(app);
 registerDownloadRoutes(app);
 

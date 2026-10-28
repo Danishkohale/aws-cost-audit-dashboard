@@ -2,7 +2,7 @@
  * SQLite job store — uses Bun's built-in SQLite (bun:sqlite).
  * Falls back to better-sqlite3 for Node.js (tests).
  */
-import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
+import type { Finding, Job, JobStatus, Payload, RecDetail, Summary } from "../types";
 import { round2 } from "../report/format";
 import { todayIso } from "../report/format";
 import { randomId } from "./jobs";
@@ -159,6 +159,13 @@ export function insertFindings(id: string, findings: Finding[], startSeq: number
 	});
 	insertMany(findings);
 	return findings.length;
+}
+
+/** Persist an updated recommendation for one finding (on-demand AI route). */
+export function updateFindingRec(jobId: string, f: Finding, rec: RecDetail): void {
+	db.prepare(
+		"UPDATE findings SET meta = ? WHERE job_id = ? AND service = ? AND resource = ? AND category = ?"
+	).run(packMeta({ ...f, rec }), jobId, f.service, f.resource, f.category);
 }
 
 export function nextSeq(id: string): number {

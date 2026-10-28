@@ -114,4 +114,11 @@ export const runDemo = () => api<{ job_id: string }>("/api/demo", { method: "POS
 
 export const getJob = (jobId: string) => api<Job>(`/api/audit/${jobId}`);
 
+/** Generate the AI narrative for one finding on demand. */
+export const generateAiSuggestion = (jobId: string, f: Finding) =>
+	api<{ narrative: RecNarrative; cached: boolean }>(`/api/audit/${jobId}/ai`, {
+		method: "POST",
+		body: JSON.stringify({ service: f.service, resource: f.resource, category: f.category }),
+	});
+
 export { API_BASE, api };

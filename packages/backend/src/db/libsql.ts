@@ -9,7 +9,7 @@ import { createClient, type Client } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { randomId } from "./jobs";
 import { packMeta, unpackMeta } from "./findingrow";
-import type { Finding, Job, JobStatus, Payload, Summary } from "../types";
+import type { Finding, Job, JobStatus, Payload, RecDetail, Summary } from "../types";
 import { round2 } from "../report/format";
 import { todayIso } from "../report/format";
 
@@ -227,8 +227,20 @@ export async function insertFindings(id: string, findings: Finding[], startSeq: 
 	});
 }
 
-export async function nextSeq(id: string): Promise<number> {
-	return withDb(async (db) => {
+/**
+ * Persist an updated recommendation for one finding (used by the on-demand
+ * AI route so a generated narrative survives reload and DOCX export).
+ */
+export async function updateFindingRec(jobId: string, f: Finding, rec: RecDetail): Promise<void> {
+	await withDb(async (db) => {
+		await db.execute({
+			sql: "UPDATE findings SET meta = ? WHERE job_id = ? AND service = ? AND resource = ? AND category = ?",
+			args: [packMeta({ ...f, rec }), jobId, f.service, f.resource, f.category],
+		});
+	});
+}
+
+export async function nextSeq(id: string): Promise<number> {	return withDb(async (db) => {
 		const result = await db.execute({
 			sql: "SELECT COALESCE(MAX(seq), -1) + 1 AS n FROM findings WHERE job_id = ?",
 			args: [id],
