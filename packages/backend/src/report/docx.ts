@@ -141,13 +141,7 @@ function planRows(f: Finding): Paragraph[] {
 	paras.push(labelled("Calculation method", r.calc_method));
 	paras.push(labelled("Why this option", r.why_selected));
 	if (r.narrative) {
-		paras.push(
-			labelled(
-				"AI suggestions",
-				`LLM (${r.narrative.model}) — verified against the rule-engine facts above; every figure comes from the rules`,
-			),
-		);
-		paras.push(labelled("AI summary", narrativeText(r.narrative)));
+		paras.push(labelled("AI suggestions (LLM)", narrativeText(r.narrative)));
 	}
 	const conf = r.confidence === "high" ? "High" : r.confidence === "medium" ? "Medium" : "Low";
 	paras.push(labelled(`Confidence: ${conf}`, r.confidence_basis));

@@ -82,7 +82,6 @@ function EnginePlan({
 			<div className="ai-note">
 				<span className="ai-badge">AI suggestions</span>
 				{busy && <span>Checking the rule output…</span>}
-				{!busy && narrative && <span>LLM summary ({narrative.model}) · action and figures from the rule engine</span>}
 				{!busy && !narrative && err && (
 					<>
 						<span className="errmsg">AI unavailable: {err}</span>
