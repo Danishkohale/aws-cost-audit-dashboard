@@ -176,9 +176,6 @@ export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
 
 	const totalMonthly = actionable.reduce((s, f) => s + Number(f.est_monthly_saving_usd || 0), 0);
 	const totalAnnual = Math.round(totalMonthly * 12 * 100) / 100;
-	let implHours = 0;
-	for (const f of actionable) implHours += effortHours(f).hours;
-	implHours = Math.round(implHours * 10) / 10;
 
 	const services = [...new Set(actionable.map((f) => f.service))].sort(
 		(a, b) =>
@@ -224,7 +221,6 @@ export async function buildDocx(payload: Payload): Promise<ArrayBuffer> {
 					cell("Estimated annual savings (12 × monthly)", { fill: ZEBRA }),
 					cell(`$${money(totalAnnual)}`, { bold: true, color: GREEN, fill: ZEBRA }),
 				]),
-				row(["Estimated implementation effort", `${implHours} h of work, planning estimate only (≈ $${Math.round(implHours * DEFAULT_RATE)} labour at ${DEFAULT_RATE}/h)`]),
 			],
 		}),
 	);

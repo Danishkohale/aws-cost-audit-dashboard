@@ -32,11 +32,6 @@ export function OverviewSection({ job, m }: { job: Job; m: Metrics }) {
 					<b>{fmt$(Number(s.live_cost_total))}/mo</b>
 					<span>Cost Explorer window</span>
 				</div>
-				<div className="kpi">
-					<label>Est. implementation</label>
-					<b>≈{m.implHours}h</b>
-					<span>labour only; ≤ {fmt$(m.implCost)} at $75/h</span>
-				</div>
 			</div>
 
 			<div className="card subcard">

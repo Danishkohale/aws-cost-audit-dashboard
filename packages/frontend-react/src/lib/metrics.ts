@@ -1,29 +1,8 @@
 /**
  * Client-side aggregation & metric helpers.
  * NO FABRICATED VALUES: every number here is derived from backend finding data.
- * The only labeled estimates: implementation effort hours via a keyword heuristic.
  */
 import type { Finding, Job } from "./api";
-
-/** Estimated implementation effort by finding category (planning assumption). */
-const EFFORT_HOURS: Array<[RegExp, number]> = [
-	[/Terminate if unneeded|Delete (idle|unused)|snapshot then delete|Delete after verifying/i, 0.5],
-	[/gp2|gp3/i, 0.5],
-	[/retention|lifecycle|expiry|noncurrent/i, 1],
-	[/schedule stop|Stops? nights/i, 1],
-	[/Downsize|rightsize|oversiz|consolidat/i, 2],
-	[/NAT|VPC endpoints?/i, 1.5],
-	[/Migrate|maintenance window|family down/i, 3],
-	[/Serverless v2/i, 4],
-	[/Karpenter|Spot|Graviton|Fargate/i, 8],
-];
-
-export const DEFAULT_RATE = 75; // $/h — planning assumption, shown in footnote
-
-export function effortHours(f: Finding): { hours: number; assumed: boolean } {
-	for (const [re, h] of EFFORT_HOURS) if (re.test(f.category) || re.test(f.recommendation)) return { hours: h, assumed: false };
-	return { hours: 1, assumed: true };
-}
 
 /** Genuine savings findings only (savings > 0). */
 export function savingFindings(job: Job): Finding[] {
@@ -85,23 +64,17 @@ export interface Metrics {
 	review: Finding[];
 	estMonthly: number;
 	estAnnual: number;
-	implHours: number;
-	implCost: number;
 	byService: Array<{ service: string; savings: number; count: number }>;
 	categories: Array<{ category: string; items: Finding[] }>;
 }
 
 export function computeMetrics(job: Job): Metrics {
 	const findings = savingFindings(job);
-	let implHours = 0;
-	for (const f of findings) implHours += effortHours(f).hours;
 	return {
 		findings,
 		review: zeroSavingFindings(job),
 		estMonthly: round(monthlySavings(findings), 2),
 		estAnnual: round(monthlySavings(findings) * 12, 2),
-		implHours: round(implHours, 1),
-		implCost: round(implHours * DEFAULT_RATE, 0),
 		byService: savingsByService(findings),
 		categories: byCategory(findings),
 	};
