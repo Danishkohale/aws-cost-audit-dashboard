@@ -28,14 +28,26 @@ export interface RecOption {
 	trade_off: string;
 }
 
-/** Grounded narrative written by the backend LLM layer. */
+/** Grounded AI summary written by the backend LLM layer. */
 export interface RecNarrative {
-	business_impact: string;
-	sequencing: string;
-	owner_hint: string;
-	risk_callout: string;
-	confidence_note: string;
+	summary: string;
 	model: string;
+	// Legacy four-part fields from earlier prompts; fallback for rows stored before the summary format.
+	business_impact?: string;
+	sequencing?: string;
+	owner_hint?: string;
+	risk_callout?: string;
+	confidence_note?: string;
+}
+
+/** Render a narrative as one line, falling back to legacy stored fields. */
+export function narrativeText(n: RecNarrative): string {
+	return (
+		n.summary ||
+		[n.business_impact, n.sequencing, n.owner_hint, n.risk_callout]
+			.filter((x): x is string => typeof x === "string" && x.length > 0)
+			.join(" ")
+	);
 }
 
 /** Evidence-based remediation plan produced by the backend recommendation engine. */

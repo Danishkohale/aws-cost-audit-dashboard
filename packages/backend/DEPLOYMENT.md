@@ -174,22 +174,24 @@ npx serve .  # Runs on http://localhost:3001
 |----------|----------|---------|-------------|
 | `DB_DIR` | Yes | `/data` | SQLite database directory |
 | `NODE_ENV` | No | `production` | Environment mode |
-| `OPENROUTER_API_KEY` | No | — | Enables the grounded LLM narrative layer. Missing ⇒ rule-based text only. |
+| `OPENROUTER_API_KEY` | No | — | Enables the grounded LLM summary layer. Missing ⇒ rule-based text only. |
 | `OPENROUTER_MODEL` | No | `poolside/laguna-s-2.1:free` | Pinned model slug. Never `openrouter/free` (random router). |
 
-### LLM narrative layer (optional)
+### LLM summary layer (optional)
 
-`rules/llm.ts` adds a short business-impact / sequencing / owner / risk narrative
-to a finding **on demand** — nothing is generated during the audit.
+`rules/llm.ts` adds a **1–2 line summary** to a finding **on demand** — it
+confirms whether the rule-engine diagnosis holds against the measured evidence
+and names the action that captures the saving. Nothing is generated during the
+audit.
 
 Flow:
 
-1. The user expands a finding and clicks **Generate AI suggestion**.
+1. The user expands a finding (no separate button).
 2. The browser calls `POST /api/audit/:jobId/ai` with
    `{ service, resource, category }`.
 3. The server regenerates the finding's facts, calls the pinned model once,
-   validates the reply, persists it, and returns the narrative.
-4. Repeat clicks return the cached narrative (`cached: true`).
+   validates the reply, persists it, and returns the summary.
+4. Re-opening a finding returns the cached summary (`cached: true`).
 
 Why on demand: a free-tier model is only used for findings someone actually
 reads, the audit itself stays fast and deterministic, and a model outage can
@@ -200,7 +202,7 @@ Safety properties:
 - **The rule engine owns every number.** The model is told not to write figures
   and receives a frozen facts object.
 - **Currency and percentage guardrail.** Any `$` or `%` figure not present in
-  the facts discards the narrative (`sanitizeNarrative` → `numbersAllowed`) and
+  the facts discards the summary (`sanitizeNarrative` → `numbersAllowed`) and
   the API returns `502`; the finding keeps its deterministic rule text.
 - **Additive only.** Totals, priorities and generated reports are unchanged.
 

@@ -62,11 +62,8 @@ function stubFetch(content: unknown): void {
 
 const validItem = {
 	id: "f0",
-	business_impact: "Removes $30.37 of the $60.74 monthly cost.",
-	sequencing: "Do first because saving is $30.37.",
-	owner_hint: "Platform team should confirm memory headroom.",
-	risk_callout: "Memory headroom unknown per the evidence.",
-	confidence_note: "Cost maths is exact; memory safety is not measurable.",
+	summary:
+		"The measured CPU average supports the downsize; apply it in a maintenance window.",
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -99,18 +96,17 @@ describe("numeric guardrail", () => {
 
 	it("sanitizes a good item", () => {
 		const n = sanitizeNarrative(validItem, { saving: 30.37, cost: 60.74 }, "test-model");
-		expect(n?.business_impact).toContain("30.37");
+		expect(n?.summary).toContain("supports");
 		expect(n?.model).toBe("test-model");
 	});
 
 	it("drops an item that invents a figure", () => {
-		const bad = { ...validItem, business_impact: "Saves $99.99 every month." };
+		const bad = { ...validItem, summary: "The team saves $99.99 every month." };
 		expect(sanitizeNarrative(bad, { saving: 30.37 }, "test-model")).toBeNull();
 	});
 
-	it("drops an item with a missing field", () => {
-		const { owner_hint: _omit, ...rest } = validItem;
-		expect(sanitizeNarrative(rest, { saving: 30.37, cost: 60.74 }, "test-model")).toBeNull();
+	it("drops an item with no summary", () => {
+		expect(sanitizeNarrative({ id: "f0" }, { saving: 30.37, cost: 60.74 }, "test-model")).toBeNull();
 	});
 });
 
@@ -125,11 +121,11 @@ describe("enrichWithLlm", () => {
 	it("attaches a verified narrative", async () => {
 		stubFetch({ items: [validItem] });
 		const out = await enrichWithLlm([finding()], { apiKey: "test-key" });
-		expect(out[0].rec?.narrative?.business_impact).toContain("30.37");
+		expect(out[0].rec?.narrative?.summary).toContain("supports");
 	});
 
 	it("keeps rule text when the model invents a number", async () => {
-		stubFetch({ items: [{ ...validItem, business_impact: "$99.99 saved" }] });
+		stubFetch({ items: [{ ...validItem, summary: "The team saves $99.99." }] });
 		const out = await enrichWithLlm([finding()], { apiKey: "test-key" });
 		expect(out[0].rec?.narrative).toBeUndefined();
 	});

@@ -1,13 +1,13 @@
 /**
- * Grounded LLM narrative layer.
+ * Grounded LLM summary layer.
  *
  * Design contract (do not weaken without a test):
  *   - The rule engine (rules/recs.ts) owns every number. This module never
  *     recomputes savings, prices or projections.
- *   - The model receives a frozen "facts" object per finding and may only
- *     restate numbers that already appear in it. `sanitizeNarrative()` rejects
- *     any text containing a number absent from the facts, so a hallucinated
- *     dollar figure can never reach the report.
+ *   - The model receives a frozen "facts" object per finding and writes a 1–2
+ *     sentence summary that checks the rule output and names the action to take.
+ *     `sanitizeNarrative()` rejects any text containing a figure absent from the
+ *     facts, so a hallucinated dollar amount can never reach the report.
  *   - The layer is best-effort: no key, bad JSON, timeout or HTTP error means
  *     the finding keeps its deterministic rule text and the audit still
  *     completes. An LLM incident must never fail a scan.
@@ -27,20 +27,22 @@ const MAX_FINDINGS = 40;
 const BATCH_SIZE = 8;
 /** Parallel requests. Free tiers rate-limit aggressively; stay conservative. */
 const CONCURRENCY = 3;
-const MAX_FIELD = 420;
+const MAX_FIELD = 260;
 
-const SYSTEM = `You are an AWS cost advisory writer. You receive FACTS about one resource as JSON.
+const SYSTEM = `You are an AWS cost advisory editor. You receive FACTS about one resource from a deterministic rule engine.
+
+Write ONE summary of 1–2 short sentences (max 240 characters) that:
+1. Confirms whether the rule engine's diagnosis and selected action are credible given the measured evidence — say so plainly, and if evidence is missing, say what is missing.
+2. States the concrete action to take to capture the saving, in plain words.
 
 Hard rules:
-1. Do NOT write any numbers, currency amounts, percentages, dates or durations. Refer to figures qualitatively instead, e.g. "the calculated monthly saving", "the measured CPU average". The report already prints the exact figures from FACTS.
-2. The only digits you may write are ones inside a resource id or instance type copied verbatim from FACTS.
-3. If something is not in FACTS, say "not measurable" instead of estimating.
-4. Do not repeat the recommended change verbatim; explain the business consequence, sequencing, ownership and risk.
-5. Keep each field under ${MAX_FIELD} characters. Plain text, no markdown, no bullet characters.
-6. Output JSON only, matching the requested schema.`;
+1. Do NOT write any numbers, currency amounts, percentages, dates, durations or resource ids. Refer to figures qualitatively, e.g. "the calculated monthly saving", "the measured CPU average". The report already prints the exact figures from FACTS.
+2. If something is not in FACTS, say "not measurable" instead of estimating.
+3. No markdown, no bullet characters, no lists. Plain prose only.
+4. Output JSON only, matching the requested schema.`;
 
 const SCHEMA_HINT = `Return exactly:
-{"items":[{"id":"<id from FACTS>","business_impact":"...","sequencing":"...","owner_hint":"...","risk_callout":"...","confidence_note":"..."}]}`;
+{"items":[{"id":"<id from FACTS>","summary":"..."}]}`;
 
 export interface LlmOptions {
 	apiKey?: string | null;
@@ -119,12 +121,18 @@ function clean(v: unknown): string | null {
 	if (typeof v !== "string") return null;
 	const s = v.replace(/\s+/g, " ").trim();
 	if (!s) return null;
-	return s.length > MAX_FIELD ? `${s.slice(0, MAX_FIELD - 1).trimEnd()}…` : s;
+	if (s.length <= MAX_FIELD) return s;
+	// Prefer a whole sentence; fall back to the last word boundary.
+	const cut = s.slice(0, MAX_FIELD);
+	const sentence = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("; "));
+	if (sentence > 80) return cut.slice(0, sentence + 1).trim();
+	const word = cut.lastIndexOf(" ");
+	return `${(word > 0 ? cut.slice(0, word) : cut).trimEnd()}…`;
 }
 
 /**
  * Validate one model item against the facts it was given.
- * Returns null when the shape is wrong or a number was invented.
+ * Returns null when the shape is wrong or a financial figure was invented.
  */
 export function sanitizeNarrative(
 	raw: unknown,
@@ -133,18 +141,11 @@ export function sanitizeNarrative(
 ): RecNarrative | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
-	const fields = {
-		business_impact: clean(o.business_impact),
-		sequencing: clean(o.sequencing),
-		owner_hint: clean(o.owner_hint),
-		risk_callout: clean(o.risk_callout),
-		confidence_note: clean(o.confidence_note),
-	};
-	for (const v of Object.values(fields)) {
-		if (v === null) return null;
-		if (!numbersAllowed(v, facts)) return null;
-	}
-	return { ...(fields as Omit<RecNarrative, "model">), model };
+	// `business_impact` is accepted as a legacy alias so older fixtures still work.
+	const summary = clean(o.summary ?? o.business_impact);
+	if (summary === null) return null;
+	if (!numbersAllowed(summary, facts)) return null;
+	return { summary, model };
 }
 
 // ── transport ───────────────────────────────────────────────────────────────

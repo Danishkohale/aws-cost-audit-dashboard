@@ -22,25 +22,34 @@ export interface RecOption {
 }
 
 /**
- * Grounded narrative written by the LLM layer (rules/llm.ts).
+ * Grounded AI summary written by the LLM layer (rules/llm.ts).
  *
  * The rule engine owns every number; the model may only restate figures that
- * already appear in the finding facts. Any invented number discards the whole
- * narrative (see `sanitizeNarrative`).
+ * already appear in the finding facts. Any invented figure discards the whole
+ * summary (see `sanitizeNarrative`).
  */
 export interface RecNarrative {
-	/** Plain-language business consequence of leaving this as-is. */
-	business_impact: string;
-	/** Why this action should come now vs later relative to the other findings. */
-	sequencing: string;
-	/** Who should own the change and what they should check first. */
-	owner_hint: string;
-	/** Operational risk to watch, grounded in `rec.risks` / `rec.data_gaps`. */
-	risk_callout: string;
-	/** One line on how far the numbers can be trusted, grounded in data gaps. */
-	confidence_note: string;
+	/** 1–2 sentences: does the rule-engine diagnosis hold, and what to do next. */
+	summary: string;
 	/** Model that produced the text (pinned, for reproducibility). */
 	model: string;
+	// Legacy four-part fields from earlier prompts; read-only fallback for rows
+	// stored before the summary format. New generations never set these.
+	business_impact?: string;
+	sequencing?: string;
+	owner_hint?: string;
+	risk_callout?: string;
+	confidence_note?: string;
+}
+
+/** Render a narrative as one line, falling back to legacy stored fields. */
+export function narrativeText(n: RecNarrative): string {
+	return (
+		n.summary ||
+		[n.business_impact, n.sequencing, n.owner_hint, n.risk_callout]
+			.filter((x): x is string => typeof x === "string" && x.length > 0)
+			.join(" ")
+	);
 }
 
 /** Evidence-based remediation plan attached to a finding (see rules/recs.ts). */

@@ -1,14 +1,14 @@
 /**
  * On-demand AI suggestions.
  *
- *   POST /api/audit/:jobId/ai  → generate the narrative for ONE finding
+ *   POST /api/audit/:jobId/ai  → generate the 1–2 line summary for ONE finding
  *
  * Nothing is generated during the audit itself. The browser triggers this when
- * the user opens a finding and asks for an AI suggestion, so a free-tier model
- * is only paid for (and rate-limited by) what someone actually reads.
+ * the user opens a finding, so a free-tier model is only paid for (and
+ * rate-limited by) what someone actually reads.
  *
  * The rule engine still owns every number: `enrichWithLlm` rejects any
- * narrative that cites a `$`/`%` figure absent from the measured facts.
+ * summary that cites a `$`/`%` figure absent from the measured facts.
  */
 import type { Hono } from "hono";
 import { getFindings, updateFindingRec } from "../db/jobs";

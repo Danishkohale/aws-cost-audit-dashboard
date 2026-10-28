@@ -33,11 +33,8 @@ async function firstFinding(jobId: string) {
 
 const cleanNarrative = {
 	id: "f0",
-	business_impact: "Removes the recurring charge for capacity nobody uses.",
-	sequencing: "Act during the next maintenance window.",
-	owner_hint: "The platform team should confirm ownership.",
-	risk_callout: "Confirm nothing still depends on this resource.",
-	confidence_note: "Figures come from measured usage.",
+	summary:
+		"The measured utilisation supports this change; act in the next maintenance window.",
 };
 
 function stubModel(content: unknown): ReturnType<typeof vi.fn> {
@@ -98,18 +95,18 @@ describe("POST /api/audit/:jobId/ai", () => {
 		const first = await postJson(`/api/audit/${jobId}/ai`, body);
 		expect(first.status).toBe(200);
 		const firstBody = (await first.json()) as {
-			narrative: { business_impact: string };
+			narrative: { summary: string };
 			cached: boolean;
 		};
 		expect(firstBody.cached).toBe(false);
-		expect(firstBody.narrative.business_impact).toContain("recurring charge");
+		expect(firstBody.narrative.summary).toContain("supports");
 
 		const job = (await (await req(`/api/audit/${jobId}`)).json()) as Job;
 		const saved = job.payload?.findings.find(
 			(x) =>
 				x.service === body.service && x.resource === body.resource && x.category === body.category,
 		);
-		expect(saved?.rec?.narrative?.business_impact).toContain("recurring charge");
+		expect(saved?.rec?.narrative?.summary).toContain("supports");
 
 		const second = await postJson(`/api/audit/${jobId}/ai`, body);
 		expect(second.status).toBe(200);
@@ -121,7 +118,7 @@ describe("POST /api/audit/:jobId/ai", () => {
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const jobId = await createDemo();
 		const f = await firstFinding(jobId);
-		stubModel({ items: [{ ...cleanNarrative, business_impact: "Saves $99.99 every month." }] });
+		stubModel({ items: [{ ...cleanNarrative, summary: "The team saves $99.99 every month." }] });
 
 		const res = await postJson(`/api/audit/${jobId}/ai`, {
 			service: f.service,

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Finding, RecDetail, RecNarrative } from "../lib/api";
-import { generateAiSuggestion } from "../lib/api";
+import { generateAiSuggestion, narrativeText } from "../lib/api";
 import { currentCostMo, fmt$, type Metrics } from "../lib/metrics";
 
 const CONF_LABEL = { high: "High", medium: "Medium", low: "Low" } as const;
@@ -82,8 +82,8 @@ function EnginePlan({
 			<p className="drec"><b>Do this</b> {rec.change}</p>
 			<div className="ai-note">
 				<span className="ai-badge">AI suggestions</span>
-				{busy && <span>Generating from the measured facts…</span>}
-				{!busy && narrative && <span>LLM ({narrative.model}) — every figure comes from the rule engine.</span>}
+				{busy && <span>Checking the rule output…</span>}
+				{!busy && narrative && <span>LLM ({narrative.model}) — verified against the rule engine</span>}
 				{!busy && !narrative && err && (
 					<>
 						<span className="errmsg">AI unavailable: {err}</span>
@@ -92,14 +92,7 @@ function EnginePlan({
 				)}
 				{!busy && !narrative && !err && !hasJob && <span>Needs an audit job.</span>}
 			</div>
-			{narrative && (
-				<div className="narrative">
-					<div><label>Business impact</label><p>{narrative.business_impact}</p></div>
-					<div><label>Sequencing</label><p>{narrative.sequencing}</p></div>
-					<div><label>Owner / next step</label><p>{narrative.owner_hint}</p></div>
-					<div><label>Risk callout</label><p>{narrative.risk_callout}</p></div>
-				</div>
-			)}
+			{narrative && <p className="ai-summary">{narrativeText(narrative)}</p>}
 			<div className="costline">
 				<span><b>Cost</b> {rec.current_cost_mo !== null ? `${fmt$(rec.current_cost_mo)}/mo` : "not in window"} → {rec.projected_cost_mo !== null ? `${fmt$(rec.projected_cost_mo)}/mo after the change` : "projected not computable"}</span>
 				{rec.saving_mo !== null && <span className="green"><b>Net saving</b> {fmt$(rec.saving_mo)}/mo · {fmt$(rec.saving_an ?? rec.saving_mo * 12)}/yr</span>}
